@@ -84,7 +84,7 @@ export class AuthService {
     const { accessToken, refreshToken, refreshTokenTtlMs, expiresAt } =
       this.createAuthTokens(userId);
 
-    const hashedRefreshToken = this.cryptoService.hashToken(refreshToken);
+    const hashedRefreshToken = this.cryptoService.hashValue(refreshToken);
 
     await this.createSession({
       userId,
@@ -166,7 +166,7 @@ export class AuthService {
 
     // Hash the incoming refresh token so it can be compared with the stored hash in the DB
     const hashedIncomingToken =
-      this.cryptoService.hashToken(incomingRefreshToken);
+      this.cryptoService.hashValue(incomingRefreshToken);
 
     // Find the session that belongs to this refresh token
     const existingSession = await this.prisma.session.findUnique({
@@ -192,7 +192,7 @@ export class AuthService {
       refreshTokenTtlMs,
     } = this.createAuthTokens(existingSession.userId);
 
-    const hashedNewRefreshToken = this.cryptoService.hashToken(newRefreshToken);
+    const hashedNewRefreshToken = this.cryptoService.hashValue(newRefreshToken);
 
     // In one transaction — create the new session and revoke the old one
     await this.prisma.$transaction(async (tx) => {
@@ -228,7 +228,7 @@ export class AuthService {
     }
 
     const hashedIncomingToken =
-      this.cryptoService.hashToken(incomingRefreshToken);
+      this.cryptoService.hashValue(incomingRefreshToken);
 
     const existingSession = await this.prisma.session.findUnique({
       where: { token: hashedIncomingToken },

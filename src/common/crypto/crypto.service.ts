@@ -17,7 +17,7 @@ export class CryptoService {
     return result;
   }
 
-  hashToken(value: string) {
+  hashValue(value: string) {
     if (!value) throw new Error('Enter value to hash');
     return crypto.createHash('sha256').update(value).digest('hex');
   }

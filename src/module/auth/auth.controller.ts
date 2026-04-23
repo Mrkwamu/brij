@@ -40,10 +40,8 @@ export class AuthController {
     this.setRefreshTokenCookie(res, refreshToken, refreshTokenTtlMs);
 
     return {
+      message: 'Account created successfully',
       accessToken,
-      refreshToken,
-      device,
-      ipAddress,
     };
   }
 
@@ -59,8 +57,8 @@ export class AuthController {
       await this.authService.loginUser(dto, device, ip);
     this.setRefreshTokenCookie(res, refreshToken, refreshTokenTtlMs);
     return {
+      message: 'Login successfully',
       accessToken,
-      refreshToken,
     };
   }
 

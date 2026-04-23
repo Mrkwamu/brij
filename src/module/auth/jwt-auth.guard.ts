@@ -15,6 +15,7 @@ import { Request } from 'express';
 import { Reflector } from '@nestjs/core';
 import { JwtPayload } from './types/auth.types';
 import { IS_PUBLIC_KEY } from '../../decorators/public.decorator';
+import { AuthRequest } from '../../decorators/user.decorator';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -25,7 +26,7 @@ export class AuthGuard implements CanActivate {
   ) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const request = context.switchToHttp().getRequest<Request>();
+    const request = context.switchToHttp().getRequest<AuthRequest>();
 
     //  Check if route is public
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [

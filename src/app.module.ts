@@ -6,9 +6,18 @@ import { AuthModule } from './module/auth/auth.module';
 import { AppConfigModule } from './config/config.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthGuard } from './module/auth/jwt-auth.guard';
+import { WorkspaceModule } from './module/workspace/workspace.module';
+import { ApikeyModule } from './module/workspace/api-key/apiKey.module';
 
 @Module({
-  imports: [CrytoModule, AuthModule, AppConfigModule, PrismaModule],
+  imports: [
+    CrytoModule,
+    AuthModule,
+    AppConfigModule,
+    PrismaModule,
+    WorkspaceModule,
+    ApikeyModule,
+  ],
   controllers: [],
   providers: [
     {
