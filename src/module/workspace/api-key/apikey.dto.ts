@@ -1,4 +1,10 @@
-import { IsNotEmpty, IsOptional, IsString, Length } from 'class-validator';
+import {
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Length,
+} from 'class-validator';
 
 export class createApiKeyDto {
   @IsOptional()
@@ -11,4 +17,16 @@ export class createApiKeyDto {
   @IsString()
   @IsNotEmpty()
   workspaceId!: string;
+
+  @IsString()
+  @IsOptional()
+  keyName!: string;
+
+  @IsInt()
+  @IsOptional()
+  limit?: number;
+
+  @IsInt()
+  @IsOptional()
+  window?: number;
 }

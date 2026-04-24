@@ -26,12 +26,26 @@ export class ApikeyService {
     const keyPrefix = `${finalPrefix}_${lookup}`;
     const apiKey = `${finalPrefix}_${secret}`;
 
-    await this.prisma.apiKey.create({
-      data: {
-        workspaceId: dto.workspaceId,
-        hashedKey,
-        keyPrefix,
-      },
+    await this.prisma.$transaction(async (tx) => {
+      const apikey = await tx.apiKey.create({
+        data: {
+          workspaceId: dto.workspaceId,
+          keyName: dto.keyName,
+          hashedKey,
+          keyPrefix,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      await tx.policy.create({
+        data: {
+          apiKeyId: apikey.id,
+          limit: dto.limit,
+          window: dto.window,
+        },
+      });
     });
 
     return {

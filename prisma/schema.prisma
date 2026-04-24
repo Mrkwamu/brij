@@ -59,6 +59,7 @@ model Workspace {
 model ApiKey {
   id          String    @id @default(uuid())
   workspaceId String    @map("workspace_id")
+  keyName     String?   @default("untitled key") @map("key_name")
   hashedKey   String    @map("hashed_key")
   keyPrefix   String    @unique @map("key_prefix")
   isRevoked   Boolean   @default(false) @map("is_revoked")
@@ -67,6 +68,28 @@ model ApiKey {
   updatedAt   DateTime  @updatedAt
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  policies  Policy[]
 
   @@map("api_keys")
+}
+
+enum AlgorithmType {
+  fixed_window
+  sliding_window
+  token_bucket
+  leaky_bucket
+}
+
+model Policy {
+  id        String        @id @default(uuid())
+  apiKeyId  String        @unique @map("apikey_id")
+  limit     Int?           @default(100)
+  window    Int?           @default(60)
+  type      AlgorithmType @default(token_bucket)
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt
+
+  apikey ApiKey @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+
+  @@map("policies")
 }
