@@ -6,6 +6,7 @@ import { JwtPayload } from '../auth/types/auth.types';
 import { WorkspaceService } from './workspace.service';
 import { Public } from '../../decorators/public.decorator';
 import { ApikeyGuard } from './api-key/apiKey-guard';
+import { RateLimitingGuard } from '../rate-limiting/rate-limiting.guard';
 
 @Controller('/api/workspace')
 export class WorkspaceController {
@@ -22,7 +23,7 @@ export class WorkspaceController {
     };
   }
   @Public()
-  @UseGuards(ApikeyGuard)
+  @UseGuards(ApikeyGuard, RateLimitingGuard)
   @Post('check')
   check() {
     return {

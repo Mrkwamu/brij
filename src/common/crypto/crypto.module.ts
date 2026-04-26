@@ -5,4 +5,4 @@ import { CryptoService } from './crypto.service';
   providers: [CryptoService],
   exports: [CryptoService],
 })
-export class CrytoModule {}
+export class CryptoModule {}

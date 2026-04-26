@@ -7,6 +7,7 @@ import {
 import { Request } from 'express';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CryptoService } from '../../../common/crypto/crypto.service';
+import { timingSafeEqual } from 'crypto';
 
 @Injectable()
 export class ApikeyGuard implements CanActivate {
@@ -41,30 +42,45 @@ export class ApikeyGuard implements CanActivate {
     const shortened = secret.slice(0, 6); // get the first 6 characters i.e abcded
     const keyPrefix = `${prefix}_${shortened}`; //combine them it gives brj_abcded
 
-    await this.validateApikey(keyPrefix, secret);
+    const { id, workspaceId } = await this.validateApikey(keyPrefix, secret);
+
+    request.apikey = {
+      id,
+      workspaceId,
+    };
 
     return true;
   }
 
   async validateApikey(keyPrefix: string, secretKey: string) {
-    //look for the apikey by using prefix-key
     const lookup = await this.prisma.apiKey.findUnique({
-      where: {
-        keyPrefix,
-      },
+      where: { keyPrefix },
       select: {
+        id: true,
+        workspaceId: true,
         hashedKey: true,
         isRevoked: true,
       },
     });
 
-    if (!lookup) throw new UnauthorizedException('Invalid api key'); //if the prefix don't exist
+    // hash the incroming secret
+    const incomingHash = this.cryptoService.hashValue(secretKey);
 
-    if (lookup.isRevoked)
-      throw new UnauthorizedException('Invalid or revoked API key');
-    //hash the secretKey so we can compare it to the one we gave in the db
-    const secret = this.cryptoService.hashValue(secretKey);
-    if (secret !== lookup.hashedKey)
-      throw new UnauthorizedException('Invalid api key'); //if the prefix don't exist
+    // create a fake hash so we always do the comparison
+    // even if the key doesn't exist
+    const storedHash = lookup?.hashedKey ?? 'a'.repeat(incomingHash.length);
+
+    const hashBuffer = Buffer.from(incomingHash);
+    const storedBuffer = Buffer.from(storedHash);
+
+    const isValid =
+      hashBuffer.length === storedBuffer.length &&
+      timingSafeEqual(hashBuffer, storedBuffer);
+
+    if (!lookup || !isValid || lookup.isRevoked) {
+      throw new UnauthorizedException('Unauthorized');
+    }
+
+    return lookup;
   }
 }
