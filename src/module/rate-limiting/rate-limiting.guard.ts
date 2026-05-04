@@ -14,14 +14,17 @@ export class RateLimitingGuard implements CanActivate {
   constructor(private readonly rateLimitService: RateLimitingService) {}
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<Request>();
-    const identifier = request.headers['x-brij-identifier'] as string;
 
     const apikeyId = request.apikey?.id;
+    const identifier = request.ip;
 
     //when api key does't have an apikeyId attached to it
     if (!apikeyId) throw new UnauthorizedException('Invalid api key');
+
     //if identifer is missing return an error
-    if (!identifier) throw new UnauthorizedException('Identifier missing ');
+    if (!identifier) {
+      throw new HttpException('Identifier missing', HttpStatus.BAD_REQUEST);
+    }
 
     const { allowed, remaining, reason } =
       await this.rateLimitService.tokenBucket(apikeyId, identifier);
