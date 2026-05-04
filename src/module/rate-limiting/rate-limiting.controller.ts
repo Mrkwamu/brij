@@ -8,13 +8,13 @@ export class RateLimitingController {
   @Public()
   @Post('ratelimit')
   async testing(@Body() body: { apiKey: string; identifier: string }) {
-    const { allowed, remaining, reason } =
-      await this.rateLimitingService.tokenBucket(body.apiKey, body.identifier);
+    const result = await this.rateLimitingService.tokenBucket({
+      apiKeyId: body.apiKey,
+      identifier: body.identifier,
+      ip: '127.0.0.1',
+      endpoint: '/test',
+    });
 
-    return {
-      allowed,
-      remaining,
-      reason,
-    };
+    return result;
   }
 }
