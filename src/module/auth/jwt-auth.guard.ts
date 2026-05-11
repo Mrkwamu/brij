@@ -11,7 +11,6 @@ import {
   NotBeforeError,
   TokenExpiredError,
 } from '@nestjs/jwt';
-import { Request } from 'express';
 import { Reflector } from '@nestjs/core';
 import { JwtPayload } from './types/auth.types';
 import { IS_PUBLIC_KEY } from '../../decorators/public.decorator';

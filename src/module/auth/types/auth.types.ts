@@ -16,3 +16,9 @@ export type AuthTokenResult = {
   refreshTokenTtlMs: number;
   expiresAt: Date;
 };
+
+export interface AuthResult {
+  accessToken: string;
+  refreshToken: string;
+  refreshTokenTtlMs: number;
+}

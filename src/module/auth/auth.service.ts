@@ -12,10 +12,17 @@ import { CryptoService } from '../../common/crypto/crypto.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { parseDurationToMs } from '../../common/parse/parse-durarion-to-ms';
-import { JwtPayload, AuthSession, AuthTokenResult } from './types/auth.types';
+import {
+  JwtPayload,
+  AuthSession,
+  AuthTokenResult,
+  AuthResult,
+} from './types/auth.types';
 import { Prisma } from '../../../generated/prisma/client';
 import { randomInt } from 'crypto';
 import { EmailService } from '../../common/email/email.service';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 
 @Injectable()
 export class AuthService {
@@ -25,6 +32,8 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly jwtService: JwtService,
     private readonly emailService: EmailService,
+
+    @InjectQueue('email-queue') private emailQueue: Queue,
   ) {}
 
   private generateToken(
@@ -105,18 +114,23 @@ export class AuthService {
     return { accessToken, refreshToken, refreshTokenTtlMs };
   }
 
-  async registerUser(dto: RegisterDto, device: string, ipAddress: string) {
-    // check if an account with this email already exist
-    const email = dto.email.toLowerCase().trim();
-    const name = dto.name.trim();
-    const otp = randomInt(100000, 1000000).toString();
-    const expiresAt = Date.now() + 5 * 60 * 1000;
+  async registerUser(
+    dto: RegisterDto,
+    device: string,
+    ipAddress: string,
+  ): Promise<AuthResult> {
+    const email = dto.email.toLowerCase().trim(); //the email should not contain space and to lowercase
+    const name = dto.name.trim(); //the name should not contain space
+    const otp = randomInt(100000, 1000000).toString(); //random 6 digits otp
+    const expiresAt = Date.now() + 5 * 60 * 1000; // 5mins expiry time
 
-    // hash the password before i stored it in the DB
+    // hash the password and otp before storing it in the DB
     const hashedPassword = await this.cryptoService.hash(dto.password);
     const hashedOtp = await this.cryptoService.hash(otp);
+
     try {
       const result = await this.prisma.$transaction(async (tx) => {
+        // create user
         const newUser = await tx.user.create({
           data: {
             email,
@@ -125,7 +139,7 @@ export class AuthService {
           },
           select: { id: true, email: true },
         });
-
+        //store the otp to the db
         await tx.emailVerification.create({
           data: {
             email: newUser.email,
@@ -133,6 +147,7 @@ export class AuthService {
             expiresAt: new Date(expiresAt),
           },
         });
+        //generate token ansd store the user session
         const token = await this.createTokensAndSession(
           newUser.id,
           device,
@@ -143,14 +158,25 @@ export class AuthService {
         return { newUser, token };
       });
 
-      //send email
-      await this.emailService.accountVerification(result.newUser.email, otp);
+      //creat a send verification job
+      await this.emailQueue.add(
+        'send-verification',
+        {
+          email,
+          otp,
+        },
+        {
+          attempts: 3,
+          removeOnComplete: true,
+          removeOnFail: false,
+          backoff: {
+            type: 'exponential',
+            delay: 2000,
+          },
+        },
+      );
 
-      return {
-        accessToken: result.token.accessToken,
-        refreshToken: result.token.refreshToken,
-        refreshTokenTtlMs: result.token.refreshTokenTtlMs,
-      };
+      return result.token;
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -163,9 +189,11 @@ export class AuthService {
   }
 
   async loginUser(dto: LoginDto, device: string, ipAddress: string) {
+    const email = dto.email.toLowerCase().trim();
+    const password = dto.password;
     // find the user by email
     const existingUser = await this.prisma.user.findUnique({
-      where: { email: dto.email.toLowerCase() },
+      where: { email },
       select: { id: true, password: true },
     });
 
@@ -175,7 +203,7 @@ export class AuthService {
 
     // compare the incoming password with the stored hash in the DB
     const isPasswordMatch = await this.cryptoService.compareHash(
-      dto.password,
+      password,
       existingUser.password,
     );
 

@@ -16,7 +16,7 @@ export class EmailService {
     return this.resend;
   }
 
-  async accountVerification(email: string, otp: string) {
+  async accountVerification(email: string, otp: number) {
     // const from = this.configService.get<string>('FROM');
 
     const { data, error } = await this.getClient().emails.send({

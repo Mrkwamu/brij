@@ -10,6 +10,10 @@ import { WorkspaceModule } from './module/workspace/workspace.module';
 import { ApikeyModule } from './module/workspace/api-key/apiKey.module';
 import { RedisModule } from './common/redis/redis.module';
 import { RateLimitingModule } from './module/rate-limiting/rate-limiting.module';
+import { PolicyModule } from './module/workspace/policy/policy.module';
+import { EmailModule } from './common/email/email.module';
+import { BullModule } from '@nestjs/bullmq';
+import { ConfigService } from '@nestjs/config';
 
 @Module({
   imports: [
@@ -21,6 +25,17 @@ import { RateLimitingModule } from './module/rate-limiting/rate-limiting.module'
     ApikeyModule,
     RedisModule,
     RateLimitingModule,
+    PolicyModule,
+    EmailModule,
+    BullModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        connection: {
+          host: config.get<string>('REDIS_HOST'),
+          port: Number(config.get('REDIS_PORT')),
+        },
+      }),
+    }),
   ],
   controllers: [],
   providers: [
