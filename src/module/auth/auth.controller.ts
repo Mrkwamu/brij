@@ -5,6 +5,7 @@ import { LoginDto, RegisterDto } from './auth.dto';
 import { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { Public } from '../../decorators/public.decorator';
+import { VerifyAccountDto } from './types/auth.types';
 
 @Controller('api/auth')
 export class AuthController {
@@ -59,6 +60,24 @@ export class AuthController {
     return {
       message: 'Login successfully',
       accessToken,
+    };
+  }
+
+  @Public()
+  @Post('verify-account')
+  async verifyAccount(@Body() data: VerifyAccountDto) {
+    await this.authService.verifyAccount(data);
+    return {
+      message: 'Account verified successfully',
+    };
+  }
+
+  @Public()
+  @Post('resend-otp')
+  async resendOtp(@Body('email') email: string) {
+    await this.authService.resendEmail(email);
+    return {
+      message: 'Otp sent successfully',
     };
   }
 
