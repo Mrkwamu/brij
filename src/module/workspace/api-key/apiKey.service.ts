@@ -1,104 +1,83 @@
-// import { BadRequestException, Injectable } from '@nestjs/common';
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { PrismaService } from '../../../prisma/prisma.service';
 import * as crypto from 'crypto';
 import { CryptoService } from '../../../common/crypto/crypto.service';
-import { createApiKeyDto } from './apikey.dto';
+import { ApiKeyDto, GetApiKeysDto } from './apikey.dto';
 import {
-  ForbiddenException,
+  BadRequestException,
+  HttpException,
   Injectable,
-  UnauthorizedException,
+  InternalServerErrorException,
+  Logger,
+  NotFoundException,
 } from '@nestjs/common';
+import { ApiKeyEnv, Prisma } from '../../../../generated/prisma/client';
+import { ApikeysResponse } from './type/apikey.type';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/client';
 
 @Injectable()
 export class ApikeyService {
+  private readonly logger = new Logger(ApikeyService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly cryptoService: CryptoService,
   ) {}
 
-  private checkWorkspace(workspaceId: string, userId: string) {
-    return this.prisma.workspace.findFirst({
-      where: {
-        id: workspaceId,
-        userId,
-      },
-    });
-  }
+  async createApiKey(workspaceId: string, dto: ApiKeyDto) {
+    const keyName = dto.keyname?.trim() || 'untitled key';
+    const prefixName = dto.prefix?.trim().toLowerCase() || 'brij';
+    const secret = crypto.randomBytes(24).toString('hex');
+    const expiresAt = dto.expiresAt;
 
-  async createApiKey(
-    dto: createApiKeyDto,
-    workspaceId: string,
-    userId: string,
-  ) {
-    const workspace = await this.checkWorkspace(workspaceId, userId);
-
-    if (!workspace) {
-      throw new ForbiddenException('Access denied');
-    }
-
-    // generate a random string that will be used as the secret key for the user
-    const secret = crypto.randomBytes(32).toString('hex');
-
-    const hashedKey = this.cryptoService.hashValue(secret);
-
-    const prefix = dto.prefix?.trim();
-    const finalPrefix = prefix && prefix.length > 0 ? prefix : 'brj';
+    const env = dto.env === ApiKeyEnv.production ? 'live' : 'test';
 
     const lookup = secret.slice(0, 6);
+    const keyPrefix = `${prefixName}_${env}_${lookup}`;
+    const generatedApiKey = `${prefixName}_${env}_${secret}`;
+    const hashedKey = await this.cryptoService.hash(generatedApiKey);
 
-    const keyPrefix = `${finalPrefix}_${lookup}`;
-    const apiKey = `${finalPrefix}_${secret}`;
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const apikey = await tx.apiKey.create({
+          data: {
+            workspaceId,
+            keyName,
+            hashedKey,
+            keyPrefix,
+            permission: dto.scope,
+            environment: dto.env,
+            expiresAt,
+          },
+          select: {
+            id: true,
+          },
+        });
 
-    await this.prisma.$transaction(async (tx) => {
-      const apikey = await tx.apiKey.create({
-        data: {
-          workspaceId: workspaceId,
-          keyName: dto.keyName,
-          hashedKey,
-          keyPrefix,
-        },
-        select: {
-          id: true,
-        },
+        await tx.policy.create({
+          data: {
+            apiKeyId: apikey.id,
+            limit: dto.limit,
+            window: dto.window,
+          },
+        });
       });
 
-      await tx.policy.create({
-        data: {
-          apiKeyId: apikey.id,
-          limit: dto.limit,
-          window: dto.window,
-        },
-      });
-    });
-
-    return {
-      apiKey,
-    };
+      return generatedApiKey;
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      this.logger.error('Failed to create api key', { error, workspaceId });
+      throw new InternalServerErrorException('Failed to create apikey');
+    }
   }
 
-  async getAllApiKey(
+  async getApiKeys(
     workspaceId: string,
-    userId: string,
-    limit?: number,
-    offset?: number,
-  ) {
-    //authorize
-    if (!workspaceId) throw new UnauthorizedException('Select a workspace');
+    dto: GetApiKeysDto,
+  ): Promise<ApikeysResponse[]> {
+    const limit = dto.limit ?? 10;
 
-    const workspace = await this.prisma.workspace.findFirst({
-      where: {
-        id: workspaceId,
-        userId,
-      },
-    });
-
-    //if the workspace doesn't doesn't belong to use deny
-    if (!workspace) {
-      throw new ForbiddenException('Access denied');
-    }
-
-    //get all api in this workspace
-    return this.prisma.apiKey.findMany({
+    const keys = await this.prisma.apiKey.findMany({
       where: {
         workspaceId,
       },
@@ -109,8 +88,115 @@ export class ApikeyService {
         isRevoked: true,
       },
       take: limit,
-      skip: offset,
       orderBy: { createdAt: 'asc' },
     });
+
+    return keys;
+  }
+
+  async getApiKey(id: string) {
+    const key = await this.prisma.apiKey.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        keyName: true,
+        keyPrefix: true,
+        permission: true,
+        environment: true,
+        lastUsedAt: true,
+        isRevoked: true,
+        revokedAt: true,
+        createdAt: true,
+        policies: {
+          select: {
+            limit: true,
+            window: true,
+          },
+        },
+      },
+    });
+
+    if (!key) {
+      throw new NotFoundException('Api key not found');
+    }
+
+    return key;
+  }
+
+  async updateApikey(id: string, dto: ApiKeyDto) {
+    const data: Prisma.ApiKeyUpdateInput = {};
+
+    if (dto.keyname) data.keyName = dto.keyname.trim();
+    if (dto.scope) data.permission = dto.scope;
+    if (dto.expiresAt) data.expiresAt = dto.expiresAt;
+
+    if (dto.limit !== undefined || dto.window !== undefined) {
+      data.policies = {
+        update: {
+          where: { apiKeyId: id },
+          data: {
+            ...(dto.limit !== undefined && { limit: dto.limit }),
+            ...(dto.window !== undefined && { window: dto.window }),
+          },
+        },
+      };
+    }
+
+    if (Object.keys(data).length === 0) {
+      throw new BadRequestException('No fields provided to update');
+    }
+
+    try {
+      return await this.prisma.apiKey.update({
+        where: {
+          id,
+        },
+        data,
+        select: {
+          keyName: true,
+          permission: true,
+          expiresAt: true,
+          updatedAt: true,
+          policies: {
+            select: {
+              limit: true,
+              window: true,
+            },
+          },
+        },
+      });
+    } catch (error) {
+      if (error instanceof PrismaClientKnownRequestError) {
+        if (error.code === 'P2025') {
+          throw new NotFoundException('Api key not found');
+        }
+      }
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new InternalServerErrorException('Failed to update');
+    }
+  }
+
+  async revokeApiKey(id: string) {
+    try {
+      await this.prisma.apiKey.delete({
+        where: {
+          id,
+        },
+      });
+    } catch (error) {
+      if (error instanceof PrismaClientKnownRequestError) {
+        if (error.code === 'P2025') {
+          throw new NotFoundException('Apikey already deleted');
+        }
+      }
+      if (error instanceof HttpException) throw error;
+      this.logger.error('Failed to revoke api key', { error, id });
+      throw new InternalServerErrorException('Failed to revoke api key');
+    }
   }
 }
+
+// free_2UkMqCVnk44VRDaUBTNrCsLoe2oRh35QA8BMYYrFVrg6gJ;
+// fake_live_ab383bf80a7066f580dd11ace0352148489d3dce7985d24d
