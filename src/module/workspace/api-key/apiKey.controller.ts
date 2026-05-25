@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   Param,
   Patch,
   Post,
@@ -15,15 +16,27 @@ import { ApiKeyDto, GetApiKeysDto } from './apikey.dto';
 
 import { AppRequest } from '../../../decorators/user.decorator';
 import { WorkspaceOwnerGuard } from '../workspace.guard';
+import { Public } from '../../../decorators/public.decorator';
 
 @Controller('api')
 export class ApikeyController {
   constructor(private readonly apikeyService: ApikeyService) {}
 
-  @Post(':slug/create')
+  @Post(':slug/apis')
   @UseGuards(WorkspaceOwnerGuard)
-  async createApikey(@Req() req: AppRequest, @Body() dto: ApiKeyDto) {
-    const key = await this.apikeyService.createApiKey(req.workspace.id, dto);
+  async createApi(@Req() req: AppRequest, @Body('name') name: string) {
+    const workspaceId = req.workspace.id;
+    await this.apikeyService.createWorkspaceApi(workspaceId, name);
+
+    return {
+      message: 'Api created successfully',
+    };
+  }
+
+  @Post(':slug/apis/:apiId')
+  @UseGuards(WorkspaceOwnerGuard)
+  async createApikey(@Param('apiId') apiId: string, @Body() dto: ApiKeyDto) {
+    const key = await this.apikeyService.createApiKey(apiId, dto);
 
     return {
       message: 'Apikey created',
@@ -31,10 +44,10 @@ export class ApikeyController {
     };
   }
 
+  @Get(':slug/apis/:apiId/keys')
   @UseGuards(WorkspaceOwnerGuard)
-  @Get('workspace/:slug/keys')
-  async getApiKeys(@Req() req: AppRequest, @Query() dto: GetApiKeysDto) {
-    const keys = await this.apikeyService.getApiKeys(req.workspace.id, dto);
+  async getApiKeys(@Param('apiId') apiId: string, @Query() dto: GetApiKeysDto) {
+    const keys = await this.apikeyService.getApiKeys(apiId, dto);
 
     return {
       keys,
@@ -42,7 +55,7 @@ export class ApikeyController {
   }
 
   @UseGuards(WorkspaceOwnerGuard)
-  @Get(':slug/keys/:id')
+  @Get(':slug/apis/:apiId/keys/:id')
   async getApiKey(@Param('id') id: string) {
     const key = await this.apikeyService.getApiKey(id);
 
@@ -64,10 +77,31 @@ export class ApikeyController {
   @UseGuards(WorkspaceOwnerGuard)
   @Delete('/:slug/keys/:id')
   async deleteKey(@Param('id') id: string) {
-    await this.apikeyService.revokeApiKey(id);
+    await this.apikeyService.deleteApiKey(id);
 
     return {
       message: 'Deleted sucessfully',
+    };
+  }
+
+  @Patch('/:slug/keys/:id/disable')
+  async disable(@Param('id') id: string) {
+    const status = await this.apikeyService.disableApiKey(id);
+    return { status };
+  }
+
+  @Patch('/:slug/keys/:id/enable')
+  async enable(@Param('id') id: string) {
+    const status = await this.apikeyService.enableApiKey(id);
+    return { status };
+  }
+  @Public()
+  @Post('verify')
+  async verify(@Headers('authorization') authorization: string) {
+    const response = await this.apikeyService.verify(authorization);
+
+    return {
+      response,
     };
   }
 }

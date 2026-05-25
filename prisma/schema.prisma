@@ -8,17 +8,76 @@ datasource db {
 }
 
 model User {
-  id         String      @id @default(uuid())
-  email      String      @unique
-  name       String?
-  password   String?
-  createdAt  DateTime    @default(now()) @map("created_at")
-  updatedAt  DateTime    @updatedAt @map("updated_at")
-  sessions   Session[]
-  workspaces Workspace[]
+  id                 String              @id @default(uuid())
+  email              String              @unique
+  name               String?
+  password           String?
+  isVerified         Boolean             @default(false) @map("is_verified")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+  sessions           Session[]
+  workspaces         Workspace[]
+  emailVerifications EmailVerification[]
+  userPlans          UserPlan[]
 
   @@index([email])
   @@map("users")
+}
+
+enum PlanType {
+  free
+  starter
+  pro
+  enterprise
+}
+
+enum SubcribeStatus {
+  free
+  active
+  canceled
+  expired
+}
+
+model Plan {
+  id           String     @id @default(uuid())
+  name         PlanType   @unique @default(free)
+  monthlyQuota Int?       @map("monthly_quota")
+  maxlimit     Int        @map("max_limit")
+  minLimit     Int        @map("min_limit")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+  userPlans    UserPlan[]
+
+  @@map("plans")
+}
+
+model UserPlan {
+  id            String         @id @default(uuid())
+  userId        String         @unique @map("user_id")
+  planId        String         @map("plan_id")
+  quotaUsed     Int            @map("quota_used")
+  quotaResetsAt DateTime       @map("quota_resets_at")
+  status        SubcribeStatus @default(free)
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  user          User           @relation(fields: [userId], references: [id])
+  plan          Plan           @relation(fields: [planId], references: [id])
+
+  @@map("user_plans")
+}
+
+model EmailVerification {
+  id        String    @id @default(uuid())
+  email     String    @map("user_id")
+  hashedOtp String    @map("hashed_otp")
+  expiresAt DateTime  @map("expires_at")
+  isUsed    Boolean   @default(false) @map("is_used")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [email], references: [email], onDelete: Cascade)
+
+  @@index([email])
+  @@map("email_verification")
 }
 
 model Session {
@@ -39,31 +98,71 @@ model Session {
   @@map("sessions")
 }
 
-model Workspace {
-  id        String   @id @default(uuid())
-  userId    String   @map("user_id")
-  name      String
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  apiKeys   ApiKey[]
+enum WorkspaceStatus {
+  active
+  suspended
+  unpaid
+  banned
+  deleted
+}
 
+model Workspace {
+  id        String          @id @default(uuid())
+  userId    String          @map("user_id")
+  name      String
+  slug      String          @unique
+  status    WorkspaceStatus @default(active)
+  isDeleted Boolean         @default(false) @map("is_deleted")
+  deletedAt DateTime?       @map("deleted_at")
+  createdAt DateTime        @default(now()) @map("created_at")
+  updatedAt DateTime        @updatedAt
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  apis Api[]
+
+  @@index([userId])
   @@map("workspace")
 }
 
-model ApiKey {
-  id          String    @id @default(uuid())
-  workspaceId String    @map("workspace_id")
-  keyName     String?   @default("untitled key") @map("key_name")
-  hashedKey   String    @map("hashed_key")
-  keyPrefix   String    @unique @map("key_prefix")
-  isRevoked   Boolean   @default(false) @map("is_revoked")
-  revokedAt   DateTime? @map("revoked_at")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt
+enum ApiKeyEnv {
+  production
+  development
+}
+
+model Api {
+  id          String @id @default(uuid())
+  workspaceId String @map("workspace_id")
+  name        String
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  policies  Policy[]
+  apiKeys   ApiKey[]
+
+  @@map("api")
+}
+
+enum ApiKeyStatus {
+  active
+  disabled
+  revoked
+}
+
+model ApiKey {
+  id          String       @id @default(uuid())
+  apiId       String       @map("api_id")
+  keyName     String?      @default("untitled key") @map("key_name")
+  hashedKey   String       @map("hashed_key")
+  keyPrefix   String       @unique @map("key_prefix")
+  permission  String[]
+  environment ApiKeyEnv    @default(development)
+  status      ApiKeyStatus @default(active)
+  lastUsedAt  DateTime?    @map("last_used_at")
+  expiresAt   DateTime?    @map("expired_at")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt
+
+  api       Api         @relation(fields: [apiId], references: [id], onDelete: Cascade)
+  policies  Policy?
+  usageLogs UsageLogs[]
 
   @@map("api_keys")
 }
@@ -87,4 +186,26 @@ model Policy {
   apikey ApiKey @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
 
   @@map("policies")
+}
+
+enum UsageLogsStatus {
+  success
+  blocked
+}
+
+model UsageLogs {
+  id            String          @id @default(uuid())
+  apiKeyId      String          @map("apikey_id")
+  identifier    String
+  status        UsageLogsStatus
+  remaining     Int
+  limit         Int
+  algorithmType AlgorithmType   @map("algorithm_type")
+  resetAt       DateTime?
+  createdAt     DateTime        @default(now()) @map("created_at")
+
+  apikey ApiKey @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+
+  @@index([apiKeyId, createdAt])
+  @@map("usage_logs")
 }
