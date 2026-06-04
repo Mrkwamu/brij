@@ -25,6 +25,7 @@ import {
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/client';
 import { RedisService } from '../../../common/redis/redis.service';
 import { RateLimitingService } from '../../rate-limiting/rate-limiting.service';
+import { BillingService } from '../../billing/billing.service';
 
 @Injectable()
 export class ApikeyService {
@@ -34,6 +35,7 @@ export class ApikeyService {
     private readonly cryptoService: CryptoService,
     private readonly redisService: RedisService,
     private readonly rateLimitService: RateLimitingService,
+    private readonly billingService: BillingService,
   ) {}
 
   async createWorkspaceApi(workspaceId: string, name: string) {
@@ -56,7 +58,7 @@ export class ApikeyService {
     }
   }
 
-  async createApiKey(apiId: string, dto: ApiKeyDto) {
+  async createApiKey(apiId: string, dto: ApiKeyDto): Promise<string> {
     const keyName = dto.keyname?.trim() || 'untitled key';
     const prefixName = dto.prefix?.trim().toLowerCase() || 'brij';
     const prefix = crypto.randomBytes(3).toString('hex');
@@ -97,6 +99,7 @@ export class ApikeyService {
 
       return generatedApiKey;
     } catch (error) {
+      console.error(error);
       if (error instanceof HttpException) throw error;
       this.logger.error('Failed to create api key', { error, apiId });
       throw new InternalServerErrorException('Failed to create apikey');
@@ -353,7 +356,7 @@ export class ApikeyService {
 
       await this.validateRecord(record, raw);
 
-      await this.checkQuota(record.userId);
+      await this.billingService.checkandIncrementQuota(record.userId);
 
       const rl = await this.rateLimitService.checkLimit(
         {
@@ -380,15 +383,6 @@ export class ApikeyService {
           HttpStatus.TOO_MANY_REQUESTS,
         );
       }
-
-      await this.prisma.userPlan.update({
-        where: {
-          userId: record.userId,
-        },
-        data: {
-          quotaUsed: { increment: 1 },
-        },
-      });
 
       this.touchLastUsed(lookupKey);
 
@@ -454,6 +448,3 @@ export class ApikeyService {
     }
   }
 }
-
-// brij_live_31d0ec506b0d9a9691288e76b65ec7babc6cbe83f69e9c7fa15dc4db86cf3d8b5b7c1f;
-// brijdata_live_761991d612a72fa501eecea5b0b871090fcaaba8c8c315e29d7cdf388f301b08b53494;

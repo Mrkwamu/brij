@@ -39,8 +39,9 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     return this.client.eval(script, 1, keys, ...args);
   }
 
-  async del(key: string) {
-    return this.client.del(key);
+  async del(...keys: string[]): Promise<void> {
+    if (!keys.length) return;
+    await this.client.del(keys);
   }
 
   async get(key: string) {
@@ -58,11 +59,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     return this.client.set(key, stringValue);
   }
 
-  async hset(
-    key: string,
-    field: string | Record<string, string | number>,
-    value?: string | number,
-  ) {
+  async hset(key: string, field: string | object, value?: string | number) {
     if (typeof field === 'object') {
       await this.client.hset(key, field);
     } else {
@@ -72,5 +69,13 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
   async hgetall(key: string) {
     return this.client.hgetall(key);
+  }
+
+  async incrby(key: string, field: string, increment: number): Promise<number> {
+    return await this.client.hincrby(key, field, increment);
+  }
+
+  async keys(pattern: string): Promise<string[]> {
+    return this.client.keys(pattern);
   }
 }

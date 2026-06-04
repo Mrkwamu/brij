@@ -2,16 +2,19 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+
 import { PrismaService } from '../../prisma/prisma.service';
 import { PlanType, SubcribeStatus } from '../../../generated/prisma/enums';
 import { Plan, UserPlan } from '../../../generated/prisma/client';
 import { RedisService } from '../../common/redis/redis.service';
-import { UserPlanResponse } from './type/billing.type';
+import { QuotaCache, UserPlanResponse } from './type/billing.type';
 
 @Injectable()
 export class BillingService {
+  private readonly logger = new Logger(BillingService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
@@ -34,15 +37,20 @@ export class BillingService {
     };
   }
 
+  private quotaKey(userId: string): string {
+    return `quota:${userId}`;
+  }
+
   private async storeQuota(
     userId: string,
     monthlyQuota: number | null,
+    usedQuota: number = 0,
   ): Promise<void> {
     if (monthlyQuota === null) return;
 
-    await this.redis.hset(`quota:${userId}`, {
+    await this.redis.hset(this.quotaKey(userId), {
       monthlyQuota,
-      usedQuota: 0,
+      usedQuota,
     });
   }
 
@@ -50,13 +58,61 @@ export class BillingService {
     userId: string,
     monthlyQuota: number | null,
   ): Promise<void> {
-    const quotaKey = `quota:${userId}`;
+    const quotaKey = this.quotaKey(userId);
     if (monthlyQuota === null) {
       await this.redis.del(quotaKey);
       return;
     }
 
     await this.redis.hset(quotaKey, 'monthlyQuota', monthlyQuota);
+  }
+
+  async restoreQuota(userId: string): Promise<QuotaCache | null> {
+    const userPlan = await this.prisma.userPlan.findUnique({
+      where: { userId },
+      include: { plan: true },
+    });
+
+    if (!userPlan || userPlan.plan.monthlyQuota === null) return null;
+
+    const quota: QuotaCache = {
+      monthlyQuota: userPlan.plan.monthlyQuota,
+      usedQuota: userPlan.quotaUsed,
+    };
+
+    await this.redis.hset(this.quotaKey(userId), quota);
+
+    return quota;
+  }
+
+  async checkandIncrementQuota(userId: string): Promise<void> {
+    const key = this.quotaKey(userId);
+
+    const quotaData = await this.redis.hgetall(key);
+    const isEmpty = !quotaData || Object.keys(quotaData).length === 0;
+
+    let monthlyQuota: number;
+
+    if (isEmpty) {
+      const restore = await this.restoreQuota(userId);
+
+      if (!restore) return;
+
+      monthlyQuota = restore.monthlyQuota;
+    } else {
+      monthlyQuota = parseInt(quotaData.monthlyQuota);
+    }
+    const newUsed = await this.redis.incrby(key, 'usedQuota', 1);
+
+    if (newUsed > monthlyQuota) {
+      await this.redis.incrby(key, 'usedQuota', -1);
+
+      throw new ForbiddenException({
+        message: 'Monthly quota exceeded',
+        used: newUsed - 1,
+        limit: monthlyQuota,
+      });
+    }
   }
 
   async assignPlan(
