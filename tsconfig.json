@@ -19,11 +19,12 @@
     "noImplicitAny": true,
     "strictBindCallApply": true,
     "noFallthroughCasesInSwitch": true,
-   
+    "types": ["jest", "node"]
   },
   "include": [
     "src/**/*",
-    "generated/**/*"
+    "generated/**/*",
+    "prisma/**/*"
   ],
   "exclude": [
     "node_modules",

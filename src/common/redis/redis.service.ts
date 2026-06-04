@@ -17,7 +17,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       },
 
       maxRetriesPerRequest: 3,
-      enableOfflineQueue: false,
+      enableOfflineQueue: true,
     });
 
     this.client.on('connect', () => console.log('Redis connected'));
@@ -35,8 +35,8 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     return this.client;
   }
 
-  async eval(script: string, keys: string[], args: (string | number)[]) {
-    return this.client.eval(script, keys.length, ...keys, ...args);
+  async eval(script: string, keys: string, args: (string | number)[]) {
+    return this.client.eval(script, 1, keys, ...args);
   }
 
   async del(key: string) {
@@ -45,10 +45,6 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
   async get(key: string) {
     return this.client.get(key);
-  }
-
-  async hgetall(key: string) {
-    return this.client.hgetall(key);
   }
 
   async set(key: string, value: unknown, ttlSeconds?: number) {
@@ -60,5 +56,21 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     }
 
     return this.client.set(key, stringValue);
+  }
+
+  async hset(
+    key: string,
+    field: string | Record<string, string | number>,
+    value?: string | number,
+  ) {
+    if (typeof field === 'object') {
+      await this.client.hset(key, field);
+    } else {
+      await this.client.hset(key, field, value!);
+    }
+  }
+
+  async hgetall(key: string) {
+    return this.client.hgetall(key);
   }
 }

@@ -167,21 +167,15 @@ model ApiKey {
   @@map("api_keys")
 }
 
-enum AlgorithmType {
-  fixed_window
-  sliding_window
-  token_bucket
-  leaky_bucket
-}
-
 model Policy {
-  id        String        @id @default(uuid())
-  apiKeyId  String        @unique @map("apikey_id")
-  limit     Int?          @default(100)
-  window    Int?          @default(60)
-  type      AlgorithmType @default(token_bucket)
-  createdAt DateTime      @default(now()) @map("created_at")
-  updatedAt DateTime      @updatedAt
+  id         String   @id @default(uuid())
+  apiKeyId   String   @unique @map("apikey_id")
+  limit      Int?     @default(100)
+  window     Int?     @default(60)
+  burstLimit Int?
+  type       String   @default("token_bucket")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt
 
   apikey ApiKey @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
 
@@ -194,15 +188,14 @@ enum UsageLogsStatus {
 }
 
 model UsageLogs {
-  id            String          @id @default(uuid())
-  apiKeyId      String          @map("apikey_id")
-  identifier    String
-  status        UsageLogsStatus
-  remaining     Int
-  limit         Int
-  algorithmType AlgorithmType   @map("algorithm_type")
-  resetAt       DateTime?
-  createdAt     DateTime        @default(now()) @map("created_at")
+  id         String          @id @default(uuid())
+  apiKeyId   String          @map("apikey_id")
+  identifier String
+  status     UsageLogsStatus
+  remaining  Int
+  limit      Int
+  resetAt    DateTime?
+  createdAt  DateTime        @default(now()) @map("created_at")
 
   apikey ApiKey @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
 

@@ -21,7 +21,7 @@ if not tokens then
  -- set the expiry to match that of window
  redis.call('EXPIRE', key, window)
 
-  return {1, tokens}
+  return {1, tokens, limit, now + window}
 end
 
 -- convert stored values from string to number
@@ -35,23 +35,25 @@ local refillRate = limit / window
 local timePassed = (now - lastRefill)
 
 -- how many tokens should have come back in that time
-local tokensToAdd = refillRate * timePassed
+local refill = refillRate * timePassed
 
 -- add tokens back, but don't exceed the limit
-tokens = math.min(limit, tokens + tokensToAdd)
+tokens = math.min(limit, tokens + refill)
 
 -- only move refill time forward if we actually added tokens
-if tokensToAdd > 0 then
+if refill > 0 then
     lastRefill = now
   end
 
 -- no tokens left, block request
+local tokensNeeded = limit - tokens
+local resetAt = now + math.ceil(tokensNeeded / refillRate)
 if tokens < 1 then
   redis.call('HSET', key,
     'tokens', tokens,
     'lastRefill', lastRefill
   )
-  return {0, tokens}
+  return {0, 0,  limit, resetAt}
 end
 
 -- consume one token for this request
@@ -63,5 +65,7 @@ redis.call('HSET', key,
   'lastRefill', lastRefill
 )
 
-return {1, tokens}
+redis.call('EXPIRE', key, window)
+
+return {1, tokens, limit, resetAt}
 `;

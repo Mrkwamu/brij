@@ -1,7 +1,11 @@
-import {
-  AlgorithmType,
-  ApiKeyStatus,
-} from '../../../../../generated/prisma/enums';
+import { ApiKeyStatus } from '../../../../../generated/prisma/enums';
+
+export interface ParsedApikey {
+  raw: string;
+  prefixName: string;
+  env: string;
+  lookupKey: string;
+}
 
 export interface ApikeysResponse {
   id: string;
@@ -11,6 +15,7 @@ export interface ApikeysResponse {
   lastUsedAt: Date | null;
   expiresAt: Date | null;
 }
+
 export type ApiKeyCache = {
   id: string;
   hashedKey: string;
@@ -18,9 +23,20 @@ export type ApiKeyCache = {
   expiresAt: Date | null;
   status: ApiKeyStatus;
   lastUsedAt: Date | null;
-  policies: {
+  policy: {
     limit: number | null;
     window: number | null;
-    type: AlgorithmType;
+    burstLimit: number | null;
   };
+  userId: string;
 };
+
+export interface VerifyApiKey {
+  allowed: boolean;
+  keyId: string;
+  // ownerId: string;
+  permission?: string[];
+  remaining?: number;
+  limit?: number;
+  resetAt: number;
+}

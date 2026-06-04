@@ -7,19 +7,15 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { PlanType, SubcribeStatus } from '../../../generated/prisma/enums';
 import { Plan, UserPlan } from '../../../generated/prisma/client';
-
-export interface UserPlanResponse {
-  plan: string;
-  status: SubcribeStatus;
-  monthlyQuota: number | null; // null = unlimited
-  quotaUsed: number;
-  quotaResetsAt: Date;
-  createdAt: Date;
-}
+import { RedisService } from '../../common/redis/redis.service';
+import { UserPlanResponse } from './type/billing.type';
 
 @Injectable()
 export class BillingService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
+  ) {}
 
   private resetDate(from: Date): Date {
     const date = new Date(from);
@@ -38,6 +34,31 @@ export class BillingService {
     };
   }
 
+  private async storeQuota(
+    userId: string,
+    monthlyQuota: number | null,
+  ): Promise<void> {
+    if (monthlyQuota === null) return;
+
+    await this.redis.hset(`quota:${userId}`, {
+      monthlyQuota,
+      usedQuota: 0,
+    });
+  }
+
+  private async updateQuotaLimit(
+    userId: string,
+    monthlyQuota: number | null,
+  ): Promise<void> {
+    const quotaKey = `quota:${userId}`;
+    if (monthlyQuota === null) {
+      await this.redis.del(quotaKey);
+      return;
+    }
+
+    await this.redis.hset(quotaKey, 'monthlyQuota', monthlyQuota);
+  }
+
   async assignPlan(
     userId: string,
     plan: Plan,
@@ -45,6 +66,7 @@ export class BillingService {
   ): Promise<UserPlanResponse> {
     const now = new Date();
     const quotaResetsAt = this.resetDate(now);
+
     const data = {
       userId,
       planId: plan.id,
@@ -67,10 +89,12 @@ export class BillingService {
           include: { plan: true },
         });
 
+    await this.storeQuota(userId, plan.monthlyQuota);
+
     return this.response(userPlan);
   }
 
-  async chnagePlan(
+  async changePlan(
     existingPlan: UserPlan & { plan: Plan },
     newPlan: Plan,
     userId: string,
@@ -102,10 +126,11 @@ export class BillingService {
       data: {
         planId: newPlan.id,
         status: SubcribeStatus.active,
-        // Preserve quotaUsed and quotaResetsAt — billing period doesn't reset on plan change
       },
       include: { plan: true },
     });
+
+    await this.updateQuotaLimit(userId, newPlan.monthlyQuota);
 
     return this.response(updatedPlan);
   }
@@ -150,6 +175,6 @@ export class BillingService {
       return this.assignPlan(userId, selectedPlan, exisitingPlan.id);
     }
 
-    return this.chnagePlan(exisitingPlan, selectedPlan, userId);
+    return this.changePlan(exisitingPlan, selectedPlan, userId);
   }
 }

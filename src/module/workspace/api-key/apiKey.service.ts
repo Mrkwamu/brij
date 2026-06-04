@@ -6,6 +6,7 @@ import { CryptoService } from '../../../common/crypto/crypto.service';
 import { ApiKeyDto, GetApiKeysDto } from './apikey.dto';
 import {
   BadRequestException,
+  ForbiddenException,
   HttpException,
   HttpStatus,
   Injectable,
@@ -15,7 +16,12 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ApiKeyEnv, Prisma } from '../../../../generated/prisma/client';
-import { ApiKeyCache, ApikeysResponse } from './type/apikey.type';
+import {
+  ApiKeyCache,
+  ApikeysResponse,
+  ParsedApikey,
+  VerifyApiKey,
+} from './type/apikey.type';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/client';
 import { RedisService } from '../../../common/redis/redis.service';
 import { RateLimitingService } from '../../rate-limiting/rate-limiting.service';
@@ -209,93 +215,190 @@ export class ApikeyService {
     }
   }
 
-  async verify(authorization: string) {
+  private parseAuthHeaders(authorization: string): ParsedApikey {
     if (!authorization) throw new BadRequestException('Apikey is missing');
 
-    const apikey = authorization?.split(' ')[1];
-    if (!apikey)
-      throw new UnauthorizedException('Invalid authorization format');
+    const raw = authorization.split(' ')[1];
+    if (!raw) throw new UnauthorizedException('Invalid authorization format');
 
     const apikeyRegex = /^([a-z][a-z0-9]+)_(live|test)_([a-f0-9]{32,70})$/;
-    const match = apikey.match(apikeyRegex);
-    if (!match) throw new UnauthorizedException('Invalid api key');
+
+    const match = raw.match(apikeyRegex);
+
+    if (!match) throw new BadRequestException('Invalid api key');
 
     const [, prefixName, env, secret] = match;
     const prefix = secret.slice(0, 6);
-    const lookupKey = `${prefixName}_${env}_${prefix}`;
 
-    try {
-      const cached = await this.redisService.get(lookupKey);
-      let record: ApiKeyCache | null = null;
+    return {
+      raw,
+      prefixName,
+      env,
+      lookupKey: `${prefixName}_${env}_${prefix}`,
+    };
+  }
 
-      if (cached) {
-        record = JSON.parse(cached) as ApiKeyCache;
+  private async record(lookupKey: string): Promise<ApiKeyCache> {
+    const cached = await this.redisService.get(lookupKey);
 
-        console.log('This is the cached own', record);
-      } else {
-        const dbRecord = await this.prisma.apiKey.findUnique({
-          where: {
-            keyPrefix: lookupKey,
-          },
+    if (cached) return JSON.parse(cached) as ApiKeyCache;
+
+    const dbRecord = await this.prisma.apiKey.findUnique({
+      where: {
+        keyPrefix: lookupKey,
+      },
+      select: {
+        id: true,
+        hashedKey: true,
+        permission: true,
+        status: true,
+        lastUsedAt: true,
+        expiresAt: true,
+        policies: {
           select: {
-            id: true,
-            hashedKey: true,
-            permission: true,
-            status: true,
-            lastUsedAt: true,
-            expiresAt: true,
-            policies: {
+            limit: true,
+            window: true,
+            burstLimit: true,
+          },
+        },
+        api: {
+          select: {
+            workspace: {
               select: {
-                limit: true,
-                window: true,
-                type: true,
+                userId: true,
               },
             },
           },
-        });
+        },
+      },
+    });
 
-        if (!dbRecord)
-          throw new UnauthorizedException('Api key does not exist');
+    if (!dbRecord) throw new UnauthorizedException('Api key does not exist');
 
-        if (!dbRecord.policies) {
-          throw new InternalServerErrorException('Policy missing for API key');
-        }
+    if (!dbRecord.policies) {
+      throw new InternalServerErrorException('Policy missing for API key');
+    }
 
-        record = {
-          id: dbRecord.id,
-          hashedKey: dbRecord.hashedKey,
-          permission: dbRecord.permission,
-          lastUsedAt: dbRecord.lastUsedAt,
-          expiresAt: dbRecord.expiresAt,
-          status: dbRecord.status,
-          policies: dbRecord.policies,
-        };
-      }
+    const record: ApiKeyCache = {
+      id: dbRecord.id,
+      hashedKey: dbRecord.hashedKey,
+      permission: dbRecord.permission,
+      lastUsedAt: dbRecord.lastUsedAt,
+      expiresAt: dbRecord.expiresAt,
+      status: dbRecord.status,
+      policy: dbRecord.policies,
+      userId: dbRecord.api.workspace.userId,
+    };
 
-      if (record.status !== 'active')
-        throw new UnauthorizedException('Unauthorized');
-      if (record.expiresAt && new Date() > new Date(record.expiresAt)) {
-        throw new UnauthorizedException('Api key has expired');
-      }
+    await this.redisService.set(lookupKey, JSON.stringify(record), 60);
 
-      const isKeyMatch = await this.cryptoService.compareHash(
-        apikey,
-        record.hashedKey,
+    return record;
+  }
+
+  private async validateRecord(
+    record: ApiKeyCache,
+    rawKey: string,
+  ): Promise<void> {
+    if (record.status !== 'active')
+      throw new UnauthorizedException('Unauthorized');
+
+    if (record.expiresAt && new Date() > new Date(record.expiresAt)) {
+      throw new UnauthorizedException('Api key has expired');
+    }
+
+    const isKeyMatch = await this.cryptoService.compareHash(
+      rawKey,
+      record.hashedKey,
+    );
+    if (!isKeyMatch) throw new UnauthorizedException('Invalid api key');
+  }
+
+  private touchLastUsed(lookupKey: string): void {
+    void this.prisma.apiKey.update({
+      where: { keyPrefix: lookupKey },
+      data: { lastUsedAt: new Date() },
+    });
+  }
+
+  private async checkQuota(userId: string): Promise<void> {
+    const result = await this.prisma.userPlan.findUnique({
+      where: {
+        userId,
+      },
+      include: {
+        plan: true,
+      },
+    });
+
+    if (!result) throw new UnauthorizedException('User has no plan');
+
+    if (result.quotaUsed >= result.plan.monthlyQuota!) {
+      throw new ForbiddenException({
+        message: 'You have used up your monthly quota',
+        quotaUsed: result.quotaUsed,
+        monthlyQuota: result.plan.monthlyQuota,
+      });
+    }
+  }
+
+  async verify(
+    authorization: string,
+    namespace?: string,
+    identifier?: string,
+  ): Promise<VerifyApiKey> {
+    try {
+      const { raw, lookupKey } = this.parseAuthHeaders(authorization);
+
+      const record = await this.record(lookupKey);
+
+      await this.validateRecord(record, raw);
+
+      await this.checkQuota(record.userId);
+
+      const rl = await this.rateLimitService.checkLimit(
+        {
+          lookupKey,
+          namespace,
+          identifier,
+        },
+        {
+          limit: record.policy.limit!,
+          window: record.policy.window!,
+        },
       );
 
-      if (!isKeyMatch) throw new UnauthorizedException('Invalid api key');
-      // const rateLimitResult = await this.rateLimitService.tokenBucket();
+      if (!rl.allowed) {
+        throw new HttpException(
+          {
+            statusCode: HttpStatus.TOO_MANY_REQUESTS,
+            error: 'Too Many Requests',
+            message: 'Rate limit exceeded. Please try again later.',
+            limit: rl.limit,
+            remaining: rl.remaining,
+            resetAt: rl.resetAt,
+          },
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
 
-      await this.redisService.set(lookupKey, JSON.stringify(record), 60);
-
-      void this.prisma.apiKey.update({
-        where: { keyPrefix: lookupKey },
-        data: { lastUsedAt: new Date() },
+      await this.prisma.userPlan.update({
+        where: {
+          userId: record.userId,
+        },
+        data: {
+          quotaUsed: { increment: 1 },
+        },
       });
+
+      this.touchLastUsed(lookupKey);
+
       return {
-        valid: true,
+        allowed: rl.allowed,
+        keyId: record.id,
         permission: record.permission,
-        expiresAt: record.expiresAt,
+        remaining: rl.remaining,
+        limit: rl.limit,
+        resetAt: rl.resetAt,
       };
     } catch (err) {
       if (err instanceof HttpException) throw err;
@@ -335,7 +438,6 @@ export class ApikeyService {
           keyPrefix: true,
         },
       });
-      
 
       const lookupKey = result.keyPrefix;
 
@@ -351,8 +453,6 @@ export class ApikeyService {
       throw new InternalServerErrorException('Failed to revoke api key');
     }
   }
-
-
 }
 
 // brij_live_31d0ec506b0d9a9691288e76b65ec7babc6cbe83f69e9c7fa15dc4db86cf3d8b5b7c1f;

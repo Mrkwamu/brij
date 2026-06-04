@@ -1,119 +1,71 @@
-import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { RedisService } from '../../common/redis/redis.service';
-import { TOKEN_BUCKET_SCRIPT } from './rate-limiting.script';
-import { RateLimitContext } from './types/rate-limiting.type';
-// import { UsageLogsService } from './usage-log.service';
-// import { UsageLogsStatus } from '../../../generated/prisma/enums';
-
-//rate limit type
-// type RateLimitResult =
-//   | {
-//       allowed: true;
-//       remaining: number;
-//     }
-//   | {
-//       allowed: false;
-//       reason: string;
-//     };
+import { TOKEN_BUCKET_SCRIPT } from './rate-limiting.luascript';
+import {
+  LuaResult,
+  RateLimitCtx,
+  RateLimitPolicy,
+  RateLimitResult,
+} from './types/rate-limiting.type';
 
 @Injectable()
 export class RateLimitingService {
-  private policyCache = new Map<
-    string,
-    {
-      limit: number;
-      window: number;
-      expiresAt: number;
-    }
-  >();
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly redis: RedisService,
-  ) {}
+  private readonly logger = new Logger(RateLimitingService.name);
+  constructor(private readonly redis: RedisService) {}
 
-  private async getPolicy(apiKeyId: string) {
-    const cached = this.policyCache.get(apiKeyId);
+  async checkLimit(
+    ctx: RateLimitCtx,
+    rlPolicy: RateLimitPolicy,
+  ): Promise<RateLimitResult> {
+    const bucketKey =
+      ctx.identifier && ctx.namespace
+        ? `${ctx.lookupKey}:${ctx.namespace}:${ctx.identifier}`
+        : `${ctx.lookupKey}`;
 
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached;
-    }
+    const result = await this.runBucket(
+      bucketKey,
+      rlPolicy.limit,
+      rlPolicy.window,
+    );
 
-    const policy = await this.prisma.policy.findUnique({
-      where: {
-        apiKeyId: apiKeyId,
-      },
-      select: { limit: true, window: true },
-    });
-
-    if (!policy || policy.limit == null || policy.window == null) {
-      console.error('Invalid rate limit policy', { apiKeyId, policy });
-      return null;
-    }
-
-    const value = {
-      limit: policy.limit,
-      window: policy.window,
-      expiresAt: Date.now() + 60_000,
-    };
-
-    this.policyCache.set(apiKeyId, value);
-
-    return value;
+    return result;
   }
 
   private async runBucket(key: string, limit: number, window: number) {
+    const redisKey = `rl:${key}`;
     const now = Math.floor(Date.now() / 1000);
 
-    return (await this.redis.eval(
-      TOKEN_BUCKET_SCRIPT,
-      [key],
-      [String(limit), String(window), String(now)],
-    )) as [number, number];
-  }
-
-  async tokenBucket(ctx: RateLimitContext) {
-    const policy = await this.getPolicy(ctx.apiKeyId);
-
-    if (!policy) {
-      return { allowed: false, reason: 'Invalid policy' };
+    if (limit <= 0) {
+      throw new BadRequestException('Invalid limit');
     }
 
-    const keys = {
-      apiKey: `rate_limit:api:${ctx.apiKeyId}`,
-      identifier: `rate_limit:id:${ctx.apiKeyId}:${ctx.identifier}`,
-      ip: `rate_limit:ip:${ctx.ip}`,
-      route: `rate_limit:route:${ctx.apiKeyId}:${ctx.endpoint}`,
-    };
+    if (window <= 0) {
+      throw new BadRequestException('Invalid window');
+    }
 
     try {
-      const results = await Promise.all([
-        this.runBucket(keys.apiKey, policy.limit, policy.window),
-        this.runBucket(keys.identifier, policy.limit, policy.window),
-        this.runBucket(keys.ip, policy.limit * 2, policy.window),
-        this.runBucket(keys.route, policy.limit, policy.window),
-      ]);
+      const result = (await this.redis.eval(TOKEN_BUCKET_SCRIPT, redisKey, [
+        limit,
+        window,
+        now,
+      ])) as LuaResult;
 
-      const allowed = results.every(([ok]) => ok === 1);
-      const remaining = Math.min(...results.map(([, r]) => r));
+      const [allowed, remaining, defaultLimit, resetAt] = result;
 
       return {
-        allowed,
+        allowed: allowed === 1,
         remaining,
-        breakdown: {
-          apiKey: results[0][0] === 1,
-          identifier: results[1][0] === 1,
-          ip: results[2][0] === 1,
-          route: results[3][0] === 1,
-        },
+        limit: defaultLimit,
+        resetAt,
       };
-    } catch (err) {
-      console.error('RATE LIMITER ERROR:', err);
+    } catch (error) {
+      this.logger.error(error);
 
       return {
         allowed: false,
-        remaining: policy.limit,
-        reason: 'Rate limiter unavailable',
+        remaining: 0,
+        limit,
+        resetAt: now + window,
       };
     }
   }

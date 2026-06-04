@@ -6,34 +6,34 @@ import { PolicyDto } from './policy.dto';
 export class PolicyService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async updatePolicy(dto: PolicyDto, keyPrefix: string, userId: string) {
-    // verify owner of the key
-    const apiKey = await this.prisma.apiKey.findFirst({
-      where: {
-        keyPrefix,
-        workspace: {
-          userId,
-        },
-      },
+  // async updatePolicy(dto: PolicyDto, keyPrefix: string, userId: string) {
+  //   // verify owner of the key
+  //   const apiKey = await this.prisma.apiKey.findFirst({
+  //     where: {
+  //       keyPrefix,
+  //       workspace: {
+  //         userId,
+  //       },
+  //     },
 
-      select: {
-        id: true,
-      },
-    });
+  //     select: {
+  //       id: true,
+  //     },
+  //   });
 
-    if (!apiKey) {
-      throw new ForbiddenException('Access denied');
-    }
+  //   if (!apiKey) {
+  //     throw new ForbiddenException('Access denied');
+  //   }
 
-    // 2. update policy
-    return this.prisma.policy.update({
-      where: {
-        apiKeyId: apiKey.id,
-      },
-      data: {
-        limit: dto.limit,
-        window: dto.window,
-      },
-    });
-  }
+  //   // 2. update policy
+  //   return this.prisma.policy.update({
+  //     where: {
+  //       apiKeyId: apiKey.id,
+  //     },
+  //     data: {
+  //       limit: dto.limit,
+  //       window: dto.window,
+  //     },
+  //   });
+  // }
 }

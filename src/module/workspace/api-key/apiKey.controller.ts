@@ -33,14 +33,14 @@ export class ApikeyController {
     };
   }
 
-  @Post(':slug/apis/:apiId')
+  @Post(':slug/apis/:apiId/keys')
   @UseGuards(WorkspaceOwnerGuard)
   async createApikey(@Param('apiId') apiId: string, @Body() dto: ApiKeyDto) {
     const key = await this.apikeyService.createApiKey(apiId, dto);
 
     return {
       message: 'Apikey created',
-      key,
+      data: key,
     };
   }
 
@@ -84,24 +84,32 @@ export class ApikeyController {
     };
   }
 
+  @UseGuards(WorkspaceOwnerGuard)
   @Patch('/:slug/keys/:id/disable')
   async disable(@Param('id') id: string) {
     const status = await this.apikeyService.disableApiKey(id);
     return { status };
   }
 
+  @UseGuards(WorkspaceOwnerGuard)
   @Patch('/:slug/keys/:id/enable')
   async enable(@Param('id') id: string) {
     const status = await this.apikeyService.enableApiKey(id);
     return { status };
   }
+
   @Public()
   @Post('verify')
-  async verify(@Headers('authorization') authorization: string) {
-    const response = await this.apikeyService.verify(authorization);
-
-    return {
-      response,
-    };
+  async verify(
+    @Headers('authorization') authorization: string,
+    @Body('namespace') namespace?: string,
+    @Body('identifier') identifier?: string,
+  ) {
+    const response = await this.apikeyService.verify(
+      authorization,
+      namespace,
+      identifier,
+    );
+    return { response };
   }
 }

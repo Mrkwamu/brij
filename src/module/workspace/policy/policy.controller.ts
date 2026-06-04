@@ -8,23 +8,23 @@ import { JwtPayload } from '../../auth/types/auth.types';
 export class PolicyController {
   constructor(private readonly policyService: PolicyService) {}
 
-  @Patch(':keyprefix/edit-policy')
-  async updateKeyPolicy(
-    @Param('keyprefix') keyPrefix: string,
-    @Body() dto: PolicyDto,
-    @User() user: JwtPayload,
-  ) {
-    const userId = user.userId;
-    const { limit, window } = await this.policyService.updatePolicy(
-      dto,
-      keyPrefix,
-      userId,
-    );
+  // @Patch(':keyprefix/edit-policy')
+  // async updateKeyPolicy(
+  //   @Param('keyprefix') keyPrefix: string,
+  //   @Body() dto: PolicyDto,
+  //   @User() user: JwtPayload,
+  // ) {
+  //   const userId = user.userId;
+  //   const { limit, window } = await this.policyService.updatePolicy(
+  //     dto,
+  //     keyPrefix,
+  //     userId,
+  //   );
 
-    return {
-      message: 'Policy edited successfully',
-      limit,
-      window,
-    };
-  }
+  //   return {
+  //     message: 'Policy edited successfully',
+  //     limit,
+  //     window,
+  //   };
+  // }
 }

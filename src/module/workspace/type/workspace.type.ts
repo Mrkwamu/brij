@@ -14,3 +14,13 @@ export interface GetAllWorkspaceResponse {
   slug: string;
   createdAt: Date;
 }
+
+export interface GetWorkspaceResponse {
+  id: string;
+  name: string;
+  slug: string;
+  apis: {
+    id: string;
+    name: string;
+  }[];
+}

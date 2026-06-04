@@ -33,7 +33,6 @@ export class WorkspaceOwnerGuard implements CanActivate {
     }
 
     request.workspace = workspace;
-
     return true;
   }
 }

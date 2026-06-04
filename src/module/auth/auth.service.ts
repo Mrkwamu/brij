@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   HttpException,
   Injectable,
   InternalServerErrorException,
@@ -23,6 +24,7 @@ import { Prisma } from '../../../generated/prisma/client';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { OtpService } from '../../common/otp/otp.service';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/client';
 
 interface CreateOtpRecordDto {
   email: string;
@@ -151,7 +153,10 @@ export class AuthService {
       {
         attempts: 3,
         removeOnComplete: true,
-        removeOnFail: true,
+        removeOnFail: {
+          age: 3600,
+          count: 100,
+        },
         backoff: {
           type: 'exponential',
           delay: 2000,
@@ -210,6 +215,11 @@ export class AuthService {
 
       return result.token;
     } catch (error) {
+      if (error instanceof PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') {
+          throw new ConflictException('Account already exists.');
+        }
+      }
       if (error instanceof HttpException) {
         throw error;
       }

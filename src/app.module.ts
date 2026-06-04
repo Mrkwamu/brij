@@ -14,6 +14,8 @@ import { PolicyModule } from './module/workspace/policy/policy.module';
 import { EmailModule } from './common/email/email.module';
 import { BullModule } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
+import { OtpModule } from './common/otp/otp.module';
+import { BillingModule } from './module/billing/billing.module';
 
 @Module({
   imports: [
@@ -27,6 +29,8 @@ import { ConfigService } from '@nestjs/config';
     RateLimitingModule,
     PolicyModule,
     EmailModule,
+    OtpModule,
+    BillingModule,
     BullModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({

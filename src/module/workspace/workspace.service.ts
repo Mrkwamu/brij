@@ -11,6 +11,7 @@ import { slugify } from '../../common/utils/string.utils';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/client';
 import {
   GetAllWorkspaceResponse,
+  GetWorkspaceResponse,
   WorkspaceResponse,
 } from './type/workspace.type';
 import { WorkSpaceDto } from './type/dto';
@@ -19,9 +20,6 @@ import { WorkSpaceDto } from './type/dto';
 export class WorkspaceService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * This file is sole purpose is to create a workspace for users
-   */
   async createWorkspace(
     userId: string,
     dto: WorkSpaceDto,
@@ -99,33 +97,27 @@ export class WorkspaceService {
     }
   }
 
-  async getWorkspace(workspaceId: string) {
-    try {
-      const workspace = await this.prisma.workspace.findFirst({
-        where: { id: workspaceId, isDeleted: false },
-        select: {
-          id: true,
-          name: true,
-          apiKeys: {
-            select: {
-              keyName: true,
-            },
+  async getWorkspace(workspaceId: string): Promise<GetWorkspaceResponse> {
+    const workspace = await this.prisma.workspace.findFirst({
+      where: { id: workspaceId, isDeleted: false },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        apis: {
+          select: {
+            id: true,
+            name: true,
           },
         },
-      });
+      },
+    });
 
-      if (!workspace) {
-        throw new NotFoundException('Workspace not found');
-      }
-
-      return workspace;
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-
-      throw new InternalServerErrorException('Failed to load workspace');
+    if (!workspace) {
+      throw new NotFoundException('Workspace not found');
     }
+
+    return workspace;
   }
 
   async updateWorkspace(slug: string, dto: WorkSpaceDto) {
