@@ -1,4 +1,3 @@
-
 FROM node:24-alpine
 
 WORKDIR /app
@@ -9,8 +8,8 @@ RUN npm install
 
 COPY . .
 
-RUN npx prisma generate && npm run build
+RUN npm run build
 
 EXPOSE 3000
 
-CMD ["node", "dist/main"]
+CMD ["npm", "run", "start:prod"]
