@@ -32,13 +32,12 @@ import { BillingModule } from './module/billing/billing.module';
     OtpModule,
     BillingModule,
     BullModule.forRootAsync({
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
+      useFactory: (configService: ConfigService) => ({
         connection: {
-          host: config.get<string>('REDIS_HOST'),
-          port: Number(config.get('REDIS_PORT')),
+          url: configService.get('REDIS_URL'),
         },
       }),
+      inject: [ConfigService],
     }),
   ],
   controllers: [],
