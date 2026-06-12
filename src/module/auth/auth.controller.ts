@@ -20,7 +20,7 @@ export class AuthController {
     res.cookie('refreshToken', token, {
       maxAge: maxAge,
       secure: isProd,
-      sameSite: 'strict',
+      sameSite: isProd ? 'none' : 'strict',
       httpOnly: true,
       path: '/',
     });
