@@ -7,7 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import { Public } from '../../decorators/public.decorator';
 import { VerifyAccountDto } from './types/auth.types';
 
-@Controller('api/auth')
+@Controller('auth')
 export class AuthController {
   constructor(
     private readonly authService: AuthService,

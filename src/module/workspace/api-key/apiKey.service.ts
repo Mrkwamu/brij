@@ -3,29 +3,33 @@
 import { PrismaService } from '../../../prisma/prisma.service';
 import * as crypto from 'crypto';
 import { CryptoService } from '../../../common/crypto/crypto.service';
-import { ApiKeyDto, GetApiKeysDto } from './apikey.dto';
+import { ApiKeyDto, GetApiKeysDto, GetApisDto } from './apikey.dto';
 import {
   BadRequestException,
-  ForbiddenException,
   HttpException,
-  HttpStatus,
   Injectable,
   InternalServerErrorException,
   Logger,
   NotFoundException,
-  UnauthorizedException,
 } from '@nestjs/common';
-import { ApiKeyEnv, Prisma } from '../../../../generated/prisma/client';
 import {
-  ApiKeyCache,
+  ApiKeyEnv,
+  ApiKeyStatus,
+  Prisma,
+} from '../../../../generated/prisma/client';
+import {
+  ApikeyResponse,
   ApikeysResponse,
-  ParsedApikey,
-  VerifyApiKey,
+  ApiKeyStatusResponse,
+  ApiResponse,
+  UpdateApiKeyStatusDto,
 } from './type/apikey.type';
+
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/client';
 import { RedisService } from '../../../common/redis/redis.service';
 import { RateLimitingService } from '../../rate-limiting/rate-limiting.service';
 import { BillingService } from '../../billing/billing.service';
+import { generatePublicId } from '../../../common/utils/helper';
 
 @Injectable()
 export class ApikeyService {
@@ -38,15 +42,17 @@ export class ApikeyService {
     private readonly billingService: BillingService,
   ) {}
 
-  async createWorkspaceApi(workspaceId: string, name: string) {
+  async createApi(workspaceId: string, name: string): Promise<void> {
     const apiName = name.trim();
     if (!apiName) throw new BadRequestException('Provide a name');
+    const publicId = generatePublicId('api');
 
     try {
       await this.prisma.api.create({
         data: {
           workspaceId,
           name: apiName,
+          publicId,
         },
       });
     } catch (error) {
@@ -58,8 +64,53 @@ export class ApikeyService {
     }
   }
 
-  async createApiKey(apiId: string, dto: ApiKeyDto): Promise<string> {
-    const keyName = dto.keyname?.trim() || 'untitled key';
+  async getApis(workspaceId: string, dto: GetApisDto): Promise<ApiResponse[]> {
+    const limit = dto.limit ?? 10;
+    const result = await this.prisma.api.findMany({
+      where: {
+        workspaceId,
+      },
+      select: {
+        id: true,
+        name: true,
+        publicId: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      take: limit,
+    });
+
+    return result;
+  }
+
+  private async getApiId(
+    apiPublicId: string,
+    workspaceId: string,
+  ): Promise<string> {
+    const result = await this.prisma.api.findFirst({
+      where: {
+        workspaceId,
+        publicId: apiPublicId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!result) {
+      throw new NotFoundException('Api not found');
+    }
+
+    return result.id;
+  }
+
+  async createApiKey(
+    apiPublicId: string,
+    workspaceId: string,
+    dto: ApiKeyDto,
+  ): Promise<string> {
+    const keyName = dto.keyName?.trim() || 'untitled key';
     const prefixName = dto.prefix?.trim().toLowerCase() || 'brij';
     const prefix = crypto.randomBytes(3).toString('hex');
     const secret = crypto.randomBytes(32).toString('hex');
@@ -71,11 +122,15 @@ export class ApikeyService {
     const generatedApiKey = `${keyPrefix}${secret}`;
     const hashedKey = await this.cryptoService.hash(generatedApiKey);
 
+    const publicId = generatePublicId('key');
+    const apiId = await this.getApiId(apiPublicId, workspaceId);
+
     try {
       await this.prisma.$transaction(async (tx) => {
         const apikey = await tx.apiKey.create({
           data: {
             apiId,
+            publicId,
             keyName,
             hashedKey,
             keyPrefix,
@@ -101,25 +156,28 @@ export class ApikeyService {
     } catch (error) {
       console.error(error);
       if (error instanceof HttpException) throw error;
-      this.logger.error('Failed to create api key', { error, apiId });
+      this.logger.error('Failed to create api key', { error, publicId });
       throw new InternalServerErrorException('Failed to create apikey');
     }
   }
 
   async getApiKeys(
-    apiId: string,
+    apiPublicId: string,
+    workspaceId: string,
     dto: GetApiKeysDto,
   ): Promise<ApikeysResponse[]> {
     const limit = dto.limit ?? 10;
 
-    const keys = await this.prisma.api.findMany({
+    const apiId = await this.getApiId(apiPublicId, workspaceId);
+
+    const api = await this.prisma.api.findUnique({
       where: {
         id: apiId,
       },
       select: {
         apiKeys: {
           select: {
-            id: true,
+            publicId: true,
             keyName: true,
             keyPrefix: true,
             status: true,
@@ -127,25 +185,37 @@ export class ApikeyService {
             expiresAt: true,
           },
           take: limit,
-          orderBy: { createdAt: 'asc' },
+          orderBy: { createdAt: 'desc' },
         },
       },
     });
 
-    return keys.flatMap((api) => api.apiKeys);
+    return api?.apiKeys ?? [];
   }
 
-  async getApiKey(id: string) {
+  async getApiKey(
+    apiPublicId: string,
+    apiKeyPublicId: string,
+    workspaceId: string,
+  ): Promise<ApikeyResponse> {
+    const apiId = await this.getApiId(apiPublicId, workspaceId);
+
     const key = await this.prisma.apiKey.findUnique({
-      where: { id },
+      where: {
+        apiId_publicId: {
+          apiId,
+          publicId: apiKeyPublicId,
+        },
+      },
       select: {
-        id: true,
+        publicId: true,
         keyName: true,
         keyPrefix: true,
         permission: true,
         environment: true,
         lastUsedAt: true,
         status: true,
+        expiresAt: true,
         createdAt: true,
         policies: {
           select: {
@@ -163,17 +233,40 @@ export class ApikeyService {
     return key;
   }
 
-  async updateApikey(id: string, dto: ApiKeyDto) {
+  async updateApikey(
+    apiPublicId: string,
+    apiKeyPublicId: string,
+    workspaceId: string,
+    dto: ApiKeyDto,
+  ) {
+    const apiId = await this.getApiId(apiPublicId, workspaceId);
+
+    const apiKey = await this.prisma.apiKey.findUnique({
+      where: {
+        apiId_publicId: {
+          apiId,
+          publicId: apiKeyPublicId,
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!apiKey) {
+      throw new NotFoundException('Apikey not found');
+    }
+
     const data: Prisma.ApiKeyUpdateInput = {};
 
-    if (dto.keyname) data.keyName = dto.keyname.trim();
+    if (dto.keyName) data.keyName = dto.keyName.trim();
     if (dto.scope) data.permission = dto.scope;
     if (dto.expiresAt) data.expiresAt = dto.expiresAt;
 
     if (dto.limit !== undefined || dto.window !== undefined) {
       data.policies = {
         update: {
-          where: { apiKeyId: id },
+          where: { apiKeyId: apiKey.id },
           data: {
             ...(dto.limit !== undefined && { limit: dto.limit }),
             ...(dto.window !== undefined && { window: dto.window }),
@@ -189,7 +282,7 @@ export class ApikeyService {
     try {
       return await this.prisma.apiKey.update({
         where: {
-          id,
+          id: apiKey.id,
         },
         data,
         select: {
@@ -218,224 +311,76 @@ export class ApikeyService {
     }
   }
 
-  private parseAuthHeaders(authorization: string): ParsedApikey {
-    if (!authorization) throw new BadRequestException('Apikey is missing');
+  async updateApiKeyStatus(
+    apiPublicId: string,
+    apiKeyPublicId: string,
+    workspaceId: string,
+    dto: UpdateApiKeyStatusDto,
+  ): Promise<ApiKeyStatusResponse> {
+    const apiId = await this.getApiId(apiPublicId, workspaceId);
 
-    const raw = authorization.split(' ')[1];
-    if (!raw) throw new UnauthorizedException('Invalid authorization format');
-
-    const apikeyRegex = /^([a-z][a-z0-9]+)_(live|test)_([a-f0-9]{32,70})$/;
-
-    const match = raw.match(apikeyRegex);
-
-    if (!match) throw new BadRequestException('Invalid api key');
-
-    const [, prefixName, env, secret] = match;
-    const prefix = secret.slice(0, 6);
-
-    return {
-      raw,
-      prefixName,
-      env,
-      lookupKey: `${prefixName}_${env}_${prefix}`,
-    };
-  }
-
-  private async record(lookupKey: string): Promise<ApiKeyCache> {
-    const cached = await this.redisService.get(lookupKey);
-
-    if (cached) return JSON.parse(cached) as ApiKeyCache;
-
-    const dbRecord = await this.prisma.apiKey.findUnique({
-      where: {
-        keyPrefix: lookupKey,
-      },
-      select: {
-        id: true,
-        hashedKey: true,
-        permission: true,
-        status: true,
-        lastUsedAt: true,
-        expiresAt: true,
-        policies: {
-          select: {
-            limit: true,
-            window: true,
-            burstLimit: true,
-          },
-        },
-        api: {
-          select: {
-            workspace: {
-              select: {
-                userId: true,
-              },
-            },
-          },
-        },
-      },
-    });
-
-    if (!dbRecord) throw new UnauthorizedException('Api key does not exist');
-
-    if (!dbRecord.policies) {
-      throw new InternalServerErrorException('Policy missing for API key');
-    }
-
-    const record: ApiKeyCache = {
-      id: dbRecord.id,
-      hashedKey: dbRecord.hashedKey,
-      permission: dbRecord.permission,
-      lastUsedAt: dbRecord.lastUsedAt,
-      expiresAt: dbRecord.expiresAt,
-      status: dbRecord.status,
-      policy: dbRecord.policies,
-      userId: dbRecord.api.workspace.userId,
-    };
-
-    await this.redisService.set(lookupKey, JSON.stringify(record), 60);
-
-    return record;
-  }
-
-  private async validateRecord(
-    record: ApiKeyCache,
-    rawKey: string,
-  ): Promise<void> {
-    if (record.status !== 'active')
-      throw new UnauthorizedException('Unauthorized');
-
-    if (record.expiresAt && new Date() > new Date(record.expiresAt)) {
-      throw new UnauthorizedException('Api key has expired');
-    }
-
-    const isKeyMatch = await this.cryptoService.compareHash(
-      rawKey,
-      record.hashedKey,
-    );
-    if (!isKeyMatch) throw new UnauthorizedException('Invalid api key');
-  }
-
-  private touchLastUsed(lookupKey: string): void {
-    void this.prisma.apiKey.update({
-      where: { keyPrefix: lookupKey },
-      data: { lastUsedAt: new Date() },
-    });
-  }
-
-  private async checkQuota(userId: string): Promise<void> {
-    const result = await this.prisma.userPlan.findUnique({
-      where: {
-        userId,
-      },
-      include: {
-        plan: true,
-      },
-    });
-
-    if (!result) throw new UnauthorizedException('User has no plan');
-
-    if (result.quotaUsed >= result.plan.monthlyQuota!) {
-      throw new ForbiddenException({
-        message: 'You have used up your monthly quota',
-        quotaUsed: result.quotaUsed,
-        monthlyQuota: result.plan.monthlyQuota,
-      });
-    }
-  }
-
-  async verify(
-    authorization: string,
-    namespace?: string,
-    identifier?: string,
-  ): Promise<VerifyApiKey> {
     try {
-      const { raw, lookupKey } = this.parseAuthHeaders(authorization);
-
-      const record = await this.record(lookupKey);
-
-      await this.validateRecord(record, raw);
-
-      await this.billingService.checkandIncrementQuota(record.userId);
-
-      const rl = await this.rateLimitService.checkLimit(
-        {
-          lookupKey,
-          namespace,
-          identifier,
-        },
-        {
-          limit: record.policy.limit!,
-          window: record.policy.window!,
-        },
-      );
-
-      if (!rl.allowed) {
-        throw new HttpException(
-          {
-            statusCode: HttpStatus.TOO_MANY_REQUESTS,
-            error: 'Too Many Requests',
-            message: 'Rate limit exceeded. Please try again later.',
-            limit: rl.limit,
-            remaining: rl.remaining,
-            resetAt: rl.resetAt,
+      const key = await this.prisma.apiKey.update({
+        where: {
+          apiId_publicId: {
+            apiId,
+            publicId: apiKeyPublicId,
           },
-          HttpStatus.TOO_MANY_REQUESTS,
-        );
+        },
+        data: {
+          status: dto.status,
+        },
+        select: {
+          status: true,
+          keyPrefix: true,
+          updatedAt: true,
+        },
+      });
+
+      if (dto.status === ApiKeyStatus.disabled) {
+        await this.redisService.del(key.keyPrefix);
       }
 
-      this.touchLastUsed(lookupKey);
-
       return {
-        allowed: rl.allowed,
-        keyId: record.id,
-        permission: record.permission,
-        remaining: rl.remaining,
-        limit: rl.limit,
-        resetAt: rl.resetAt,
+        status: key.status,
+        updatedAt: key.updatedAt,
       };
-    } catch (err) {
-      if (err instanceof HttpException) throw err;
-      console.log(err);
-      throw new InternalServerErrorException('Failed to verify');
+    } catch (error) {
+      if (
+        error instanceof PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
+        throw new NotFoundException('Apkey not found');
+      }
+      this.logger.error('Failed to update apikey status', {
+        error,
+        apiKeyPublicId,
+        status: dto.status,
+      });
+
+      throw new InternalServerErrorException('Failed to update apikey status');
     }
   }
 
-  async enableApiKey(id: string) {
-    await this.prisma.apiKey.update({
-      where: { id },
-      data: { status: 'active' },
-      select: { keyPrefix: true },
-    });
-
-    return 'active';
-  }
-
-  async disableApiKey(id: string) {
-    const key = await this.prisma.apiKey.update({
-      where: { id },
-      data: { status: 'disabled' },
-      select: { keyPrefix: true },
-    });
-
-    await this.redisService.del(key.keyPrefix);
-    return 'disabled';
-  }
-
-  async deleteApiKey(id: string) {
+  async deleteApiKey(
+    apiPublicId: string,
+    apiKeyPublicId: string,
+    workspaceId: string,
+  ): Promise<void> {
+    const apiId = await this.getApiId(apiPublicId, workspaceId);
     try {
       const result = await this.prisma.apiKey.delete({
         where: {
-          id,
+          apiId_publicId: {
+            apiId,
+            publicId: apiKeyPublicId,
+          },
         },
         select: {
           keyPrefix: true,
         },
       });
-
-      const lookupKey = result.keyPrefix;
-
-      await this.redisService.del(lookupKey);
+      await this.redisService.del(result.keyPrefix);
     } catch (error) {
       if (error instanceof PrismaClientKnownRequestError) {
         if (error.code === 'P2025') {
@@ -443,7 +388,7 @@ export class ApikeyService {
         }
       }
       if (error instanceof HttpException) throw error;
-      this.logger.error('Failed to revoke api key', { error, id });
+      this.logger.error('Failed to revoke api key', { error, apiKeyPublicId });
       throw new InternalServerErrorException('Failed to revoke api key');
     }
   }

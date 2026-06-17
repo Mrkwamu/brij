@@ -1,14 +1,13 @@
+import { IsEnum } from 'class-validator';
 import { ApiKeyStatus } from '../../../../../generated/prisma/enums';
 
-export interface ParsedApikey {
-  raw: string;
-  prefixName: string;
-  env: string;
-  lookupKey: string;
+export interface ApiResponse {
+  publicId: string;
+  name: string;
 }
 
 export interface ApikeysResponse {
-  id: string;
+  publicId: string;
   keyName: string | null;
   keyPrefix: string;
   status: ApiKeyStatus;
@@ -16,27 +15,28 @@ export interface ApikeysResponse {
   expiresAt: Date | null;
 }
 
-export type ApiKeyCache = {
-  id: string;
-  hashedKey: string;
+export interface ApikeyResponse {
+  publicId: string | null;
+  keyName: string | null;
+  keyPrefix: string;
   permission: string[];
-  expiresAt: Date | null;
+  environment: string;
   status: ApiKeyStatus;
   lastUsedAt: Date | null;
-  policy: {
+  expiresAt: Date | null;
+  createdAt: Date;
+  policies: {
     limit: number | null;
     window: number | null;
-    burstLimit: number | null;
-  };
-  userId: string;
-};
+  } | null;
+}
 
-export interface VerifyApiKey {
-  allowed: boolean;
-  keyId: string;
-  // ownerId: string;
-  permission?: string[];
-  remaining?: number;
-  limit?: number;
-  resetAt: number;
+export class UpdateApiKeyStatusDto {
+  @IsEnum(ApiKeyStatus)
+  status?: ApiKeyStatus;
+}
+
+export interface ApiKeyStatusResponse {
+  status: ApiKeyStatus;
+  updatedAt: Date;
 }

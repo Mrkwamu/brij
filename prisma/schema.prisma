@@ -133,9 +133,11 @@ model Api {
   id          String @id @default(uuid())
   workspaceId String @map("workspace_id")
   name        String
+  publicId    String @unique @map("public_id")
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   apiKeys   ApiKey[]
+  createdAt DateTime  @default(now()) @map("created_at")
 
   @@map("api")
 }
@@ -149,6 +151,7 @@ enum ApiKeyStatus {
 model ApiKey {
   id          String       @id @default(uuid())
   apiId       String       @map("api_id")
+  publicId    String       @unique @map("public_id")
   keyName     String?      @default("untitled key") @map("key_name")
   hashedKey   String       @map("hashed_key")
   keyPrefix   String       @unique @map("key_prefix")
@@ -164,6 +167,7 @@ model ApiKey {
   policies  Policy?
   usageLogs UsageLogs[]
 
+  @@unique([apiId, publicId])
   @@map("api_keys")
 }
 

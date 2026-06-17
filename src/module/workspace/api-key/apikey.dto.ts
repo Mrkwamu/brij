@@ -25,7 +25,7 @@ export class ApiKeyDto {
   @Length(3, 20, {
     message: 'Api key must be between 3 and 20 characters',
   })
-  keyname?: string;
+  keyName?: string;
 
   @IsInt({ message: 'limit must be a whole number' })
   @Min(1, { message: 'limit must be at least 1 request' })
@@ -52,7 +52,13 @@ export class ApiKeyDto {
   @IsOptional()
   expiresAt?: Date;
 }
-
+export class GetApisDto {
+  @IsOptional()
+  @IsInt()
+  @Type(() => Number)
+  @Min(1)
+  limit?: number;
+}
 export class GetApiKeysDto {
   @IsOptional()
   @Type(() => Number)

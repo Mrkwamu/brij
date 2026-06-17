@@ -3,11 +3,11 @@ import { BillingService } from './billing.service';
 import { AppRequest } from '../../decorators/user.decorator';
 import { PlanType } from '../../../generated/prisma/enums';
 
-@Controller()
+@Controller('plan')
 export class BillingController {
   constructor(private readonly service: BillingService) {}
 
-  @Post('api/plan')
+  @Post()
   async sub(
     @Req() req: AppRequest,
     @Body('plan', new ParseEnumPipe(PlanType)) selectedPlan: PlanType,

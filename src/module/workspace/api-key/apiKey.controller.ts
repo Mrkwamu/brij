@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Headers,
   Param,
   Patch,
   Post,
@@ -12,104 +11,149 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApikeyService } from './apiKey.service';
-import { ApiKeyDto, GetApiKeysDto } from './apikey.dto';
+import { ApiKeyDto, GetApiKeysDto, GetApisDto } from './apikey.dto';
 
 import { AppRequest } from '../../../decorators/user.decorator';
 import { WorkspaceOwnerGuard } from '../workspace.guard';
-import { Public } from '../../../decorators/public.decorator';
 
-@Controller('api')
+import { UpdateApiKeyStatusDto } from './type/apikey.type';
+
+@UseGuards(WorkspaceOwnerGuard)
+@Controller(':slug/apis')
 export class ApikeyController {
   constructor(private readonly apikeyService: ApikeyService) {}
 
-  @Post(':slug/apis')
-  @UseGuards(WorkspaceOwnerGuard)
+  @Post()
   async createApi(@Req() req: AppRequest, @Body('name') name: string) {
     const workspaceId = req.workspace.id;
-    await this.apikeyService.createWorkspaceApi(workspaceId, name);
+    await this.apikeyService.createApi(workspaceId, name);
 
     return {
       message: 'Api created successfully',
     };
   }
 
-  @Post(':slug/apis/:apiId/keys')
-  @UseGuards(WorkspaceOwnerGuard)
-  async createApikey(@Param('apiId') apiId: string, @Body() dto: ApiKeyDto) {
-    const key = await this.apikeyService.createApiKey(apiId, dto);
+  @Get()
+  async getApi(@Req() req: AppRequest, @Query() dto: GetApisDto) {
+    const workspaceId = req.workspace.id;
+
+    const data = await this.apikeyService.getApis(workspaceId, dto);
 
     return {
-      message: 'Apikey created',
-      data: key,
+      data,
     };
   }
 
-  @Get(':slug/apis/:apiId/keys')
-  @UseGuards(WorkspaceOwnerGuard)
-  async getApiKeys(@Param('apiId') apiId: string, @Query() dto: GetApiKeysDto) {
-    const keys = await this.apikeyService.getApiKeys(apiId, dto);
-
-    return {
-      keys,
-    };
-  }
-
-  @UseGuards(WorkspaceOwnerGuard)
-  @Get(':slug/apis/:apiId/keys/:id')
-  async getApiKey(@Param('id') id: string) {
-    const key = await this.apikeyService.getApiKey(id);
+  @Post(':apiPublicId/keys')
+  async createApikey(
+    @Param('apiPublicId') apiPublicId: string,
+    @Req() req: AppRequest,
+    @Body() dto: ApiKeyDto,
+  ) {
+    const workspaceId = req.workspace.id;
+    const key = await this.apikeyService.createApiKey(
+      apiPublicId,
+      workspaceId,
+      dto,
+    );
 
     return {
       key,
     };
   }
 
-  @UseGuards(WorkspaceOwnerGuard)
-  @Patch(':slug/keys/:id')
-  async updateKeyName(@Param('id') id: string, @Body() dto: ApiKeyDto) {
-    await this.apikeyService.updateApikey(id, dto);
+  @Get(':apiPublicId/keys')
+  async getApiKeys(
+    @Param('apiPublicId') apiPublicId: string,
+    @Req() req: AppRequest,
+    @Query() dto: GetApiKeysDto,
+  ) {
+    const workspaceId = req.workspace.id;
+    const keys = await this.apikeyService.getApiKeys(
+      apiPublicId,
+      workspaceId,
+      dto,
+    );
+
+    return {
+      keys,
+    };
+  }
+
+  @Get(':apiPublicId/keys/:apiKeyPublicId')
+  async getApiKey(
+    @Param('apiPublicId') apiPublicId: string,
+    @Param('apiKeyPublicId') apiKeyPublicId: string,
+    @Req() req: AppRequest,
+  ) {
+    const workspaceId = req.workspace.id;
+    const key = await this.apikeyService.getApiKey(
+      apiPublicId,
+      apiKeyPublicId,
+      workspaceId,
+    );
+
+    return {
+      key,
+    };
+  }
+
+  @Patch(':apiPublicId/keys/:apiKeyPublicId')
+  async updateKeyName(
+    @Param('apiPublicId') apiPublicId: string,
+    @Param('apiKeyPublicId') apiKeyPublicId: string,
+    @Req() req: AppRequest,
+    @Body() dto: ApiKeyDto,
+  ) {
+    const workspaceId = req.workspace.id;
+    await this.apikeyService.updateApikey(
+      apiPublicId,
+      apiKeyPublicId,
+      workspaceId,
+      dto,
+    );
 
     return {
       message: 'Updated sucessfully',
     };
   }
 
-  @UseGuards(WorkspaceOwnerGuard)
-  @Delete('/:slug/keys/:id')
-  async deleteKey(@Param('id') id: string) {
-    await this.apikeyService.deleteApiKey(id);
+  @Delete(':apiPublicId/keys/:apiKeyPublicId')
+  async deleteKey(
+    @Param('apiPublicId') apiPublicId: string,
+    @Param('apiKeyPublicId') apiKeyPublicId: string,
+    @Req() req: AppRequest,
+  ) {
+    const workspaceId = req.workspace.id;
+    await this.apikeyService.deleteApiKey(
+      apiPublicId,
+      apiKeyPublicId,
+      workspaceId,
+    );
 
     return {
       message: 'Deleted sucessfully',
     };
   }
-
-  @UseGuards(WorkspaceOwnerGuard)
-  @Patch('/:slug/keys/:id/disable')
-  async disable(@Param('id') id: string) {
-    const status = await this.apikeyService.disableApiKey(id);
-    return { status };
-  }
-
-  @UseGuards(WorkspaceOwnerGuard)
-  @Patch('/:slug/keys/:id/enable')
-  async enable(@Param('id') id: string) {
-    const status = await this.apikeyService.enableApiKey(id);
-    return { status };
-  }
-
-  @Public()
-  @Post('verify')
-  async verify(
-    @Headers('authorization') authorization: string,
-    @Body('namespace') namespace?: string,
-    @Body('identifier') identifier?: string,
+  @Patch(':apiPublicId/keys/:apiKeyPublicId/status')
+  async updateStatus(
+    @Param('apiPublicId') apiPublicId: string,
+    @Param('apiKeyPublicId') apiKeyPublicId: string,
+    @Req() req: AppRequest,
+    @Body() dto: UpdateApiKeyStatusDto,
   ) {
-    const response = await this.apikeyService.verify(
-      authorization,
-      namespace,
-      identifier,
+    const workspaceId = req.workspace.id;
+
+    const key = await this.apikeyService.updateApiKeyStatus(
+      apiPublicId,
+      apiKeyPublicId,
+      workspaceId,
+      dto,
     );
-    return { response };
+
+    return {
+      message: 'API key status updated successfully',
+      key,
+    };
   }
 }

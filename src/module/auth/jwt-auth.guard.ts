@@ -27,18 +27,15 @@ export class AuthGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<AppRequest>();
 
-    //  Check if route is public
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
 
-    // If public skip auth
     if (isPublic) {
       return true;
     }
 
-    //  Protected routes require token
     const authHeader = request.headers.authorization;
 
     if (!authHeader) {
@@ -51,10 +48,8 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException('Token is missing or malformed');
     }
 
-    //  Verify token
     const payload = this.validate(token);
 
-    // Attach user to request
     request.user = payload;
 
     return true;

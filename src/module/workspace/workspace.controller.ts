@@ -21,11 +21,11 @@ import { WorkspaceService } from './workspace.service';
 import { WorkSpaceDto } from './type/dto';
 import { WorkspaceOwnerGuard } from './workspace.guard';
 
-@Controller('api')
+@Controller('workspaces')
 export class WorkspaceController {
   constructor(private readonly workspace: WorkspaceService) {}
 
-  @Post('workspace')
+  @Post('')
   async createWorkspace(@Body() dto: WorkSpaceDto, @User() user: JwtPayload) {
     const userId = user.userId;
 
@@ -85,13 +85,4 @@ export class WorkspaceController {
       message: 'Workspace deleted successfully',
     };
   }
-
-  // @Public()
-  // @UseGuards(ApikeyGuard, RateLimitingGuard)
-  // @Post('check')
-  // check() {
-  //   return {
-  //     message: 'sucessfully guarded lol',
-  //   };
-  // }
 }
