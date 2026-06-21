@@ -2,6 +2,7 @@ import {
   ArrayNotEmpty,
   IsArray,
   IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -11,19 +12,20 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiKeyEnv } from '../../../../generated/prisma/enums';
+import { GracePeriod, gracePeriods } from './type/apikey.type';
 
 export class ApiKeyDto {
   @IsOptional()
   @IsString()
-  @Length(3, 8, {
+  @Length(3, 12, {
     message: 'Prefix must be between 3 and 8 characters',
   })
   prefix?: string;
 
   @IsString()
   @IsOptional()
-  @Length(3, 20, {
-    message: 'Api key must be between 3 and 20 characters',
+  @Length(3, 25, {
+    message: 'Api key must be between 3 and 25 characters',
   })
   keyName?: string;
 
@@ -66,4 +68,9 @@ export class GetApiKeysDto {
   @Max(100)
   @Min(1)
   limit?: number;
+}
+
+export class RotateApiKeyDto {
+  @IsIn(gracePeriods)
+  gracePeriod!: GracePeriod;
 }

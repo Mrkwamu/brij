@@ -12,6 +12,7 @@ import { RedisService } from '../../../common/redis/redis.service';
 import { BillingService } from '../../billing/billing.service';
 import { RateLimitingService } from '../../rate-limiting/rate-limiting.service';
 import { ApiKeyCache, ParsedApikey, VerifyApiKey } from './verify.type';
+import { ApiKeyStatus } from '../../../../generated/prisma/enums';
 
 @Injectable()
 export class VerifyService {
@@ -61,6 +62,7 @@ export class VerifyService {
         status: true,
         lastUsedAt: true,
         expiresAt: true,
+        rotateAt: true,
         policies: {
           select: {
             limit: true,
@@ -92,6 +94,7 @@ export class VerifyService {
       permission: dbRecord.permission,
       lastUsedAt: dbRecord.lastUsedAt,
       expiresAt: dbRecord.expiresAt,
+      rotateAt: dbRecord.rotateAt,
       status: dbRecord.status,
       policy: dbRecord.policies,
       userId: dbRecord.api.workspace.userId,
@@ -102,21 +105,21 @@ export class VerifyService {
     return record;
   }
 
-  private async validateRecord(
-    record: ApiKeyCache,
-    rawKey: string,
-  ): Promise<void> {
-    if (record.status !== 'active')
+  private validateRecord(record: ApiKeyCache, rawKey: string): void {
+    if (
+      record.status !== ApiKeyStatus.active &&
+      record.status !== ApiKeyStatus.rotate
+    )
       throw new UnauthorizedException('Unauthorized');
 
-    if (record.expiresAt && new Date() > new Date(record.expiresAt)) {
+    if (
+      (record.expiresAt && new Date() > new Date(record.expiresAt)) ||
+      (record.rotateAt && new Date() > new Date(record.rotateAt))
+    ) {
       throw new UnauthorizedException('Api key has expired');
     }
 
-    const isKeyMatch = await this.cryptoService.compareHash(
-      rawKey,
-      record.hashedKey,
-    );
+    const isKeyMatch = this.cryptoService.verify(rawKey, record.hashedKey);
     if (!isKeyMatch) throw new UnauthorizedException('Invalid api key');
   }
 
@@ -137,7 +140,7 @@ export class VerifyService {
 
       const record = await this.record(lookupKey);
 
-      await this.validateRecord(record, raw);
+      this.validateRecord(record, raw);
 
       await this.billingService.checkandIncrementQuota(record.userId);
 

@@ -111,7 +111,7 @@ export class AuthService {
 
     // store a hash of the refresh token, never the raw value
     // So, a DB breach doesn't expose tokens
-    const hashedRefreshToken = this.cryptoService.hashValue(refreshToken);
+    const hashedRefreshToken = this.cryptoService.sign(refreshToken);
 
     await this.createSession(
       {
@@ -417,8 +417,7 @@ export class AuthService {
     const now = new Date();
 
     // Hash first so we can look it up in the db
-    const hashedIncomingToken =
-      this.cryptoService.hashValue(incomingRefreshToken);
+    const hashedIncomingToken = this.cryptoService.sign(incomingRefreshToken);
 
     try {
       const result = await this.prisma.$transaction(async (tx) => {
@@ -476,8 +475,7 @@ export class AuthService {
         const { accessToken, refreshToken, expiresAt, refreshTokenTtlMs } =
           this.createAuthTokens(oldSession.userId);
 
-        const hashedNewRefreshToken =
-          this.cryptoService.hashValue(refreshToken);
+        const hashedNewRefreshToken = this.cryptoService.sign(refreshToken);
 
         // create a new session
         await tx.session.create({
@@ -511,8 +509,7 @@ export class AuthService {
       throw new BadRequestException('Provide refresh token');
     }
 
-    const hashedIncomingToken =
-      this.cryptoService.hashValue(incomingRefreshToken);
+    const hashedIncomingToken = this.cryptoService.sign(incomingRefreshToken);
 
     const existingSession = await this.prisma.session.findUnique({
       where: { token: hashedIncomingToken },

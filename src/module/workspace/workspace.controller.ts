@@ -37,7 +37,7 @@ export class WorkspaceController {
     };
   }
 
-  @Get('workspaces')
+  @Get('')
   async getAllWorkspace(
     @User() user: JwtPayload,
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,

@@ -6,11 +6,13 @@ import { CryptoService } from '../../../common/crypto/crypto.service';
 import { ApiKeyDto, GetApiKeysDto, GetApisDto } from './apikey.dto';
 import {
   BadRequestException,
+  ConflictException,
   HttpException,
   Injectable,
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import {
   ApiKeyEnv,
@@ -22,14 +24,16 @@ import {
   ApikeysResponse,
   ApiKeyStatusResponse,
   ApiResponse,
+  GracePeriod,
+  RotateApiKeyResponse,
   UpdateApiKeyStatusDto,
 } from './type/apikey.type';
 
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/client';
 import { RedisService } from '../../../common/redis/redis.service';
-import { RateLimitingService } from '../../rate-limiting/rate-limiting.service';
-import { BillingService } from '../../billing/billing.service';
 import { generatePublicId } from '../../../common/utils/helper';
+import { parseDurationToMs } from '../../../common/parse/parse-durarion-to-ms';
+import { Cron, CronExpression } from '@nestjs/schedule';
 
 @Injectable()
 export class ApikeyService {
@@ -38,8 +42,6 @@ export class ApikeyService {
     private readonly prisma: PrismaService,
     private readonly cryptoService: CryptoService,
     private readonly redisService: RedisService,
-    private readonly rateLimitService: RateLimitingService,
-    private readonly billingService: BillingService,
   ) {}
 
   async createApi(workspaceId: string, name: string): Promise<void> {
@@ -105,6 +107,13 @@ export class ApikeyService {
     return result.id;
   }
 
+  private generateApiKeyCredentials(): { prefix: string; secret: string } {
+    return {
+      prefix: crypto.randomBytes(3).toString('hex'),
+      secret: crypto.randomBytes(32).toString('hex'),
+    };
+  }
+
   async createApiKey(
     apiPublicId: string,
     workspaceId: string,
@@ -112,15 +121,14 @@ export class ApikeyService {
   ): Promise<string> {
     const keyName = dto.keyName?.trim() || 'untitled key';
     const prefixName = dto.prefix?.trim().toLowerCase() || 'brij';
-    const prefix = crypto.randomBytes(3).toString('hex');
-    const secret = crypto.randomBytes(32).toString('hex');
+    const { prefix, secret } = this.generateApiKeyCredentials();
     const expiresAt = dto.expiresAt;
 
     const env = dto.env === ApiKeyEnv.production ? 'live' : 'test';
 
     const keyPrefix = `${prefixName}_${env}_${prefix}`;
     const generatedApiKey = `${keyPrefix}${secret}`;
-    const hashedKey = await this.cryptoService.hash(generatedApiKey);
+    const hashedKey = this.cryptoService.sign(generatedApiKey);
 
     const publicId = generatePublicId('key');
     const apiId = await this.getApiId(apiPublicId, workspaceId);
@@ -154,7 +162,6 @@ export class ApikeyService {
 
       return generatedApiKey;
     } catch (error) {
-      console.error(error);
       if (error instanceof HttpException) throw error;
       this.logger.error('Failed to create api key', { error, publicId });
       throw new InternalServerErrorException('Failed to create apikey');
@@ -390,6 +397,166 @@ export class ApikeyService {
       if (error instanceof HttpException) throw error;
       this.logger.error('Failed to revoke api key', { error, apiKeyPublicId });
       throw new InternalServerErrorException('Failed to revoke api key');
+    }
+  }
+
+  async rovokeApikey(
+    apiPublicId: string,
+    apiKeyPublicId: string,
+    workspaceId: string,
+  ): Promise<ApiKeyStatusResponse> {
+    const apiId = await this.getApiId(apiPublicId, workspaceId);
+
+    const key = await this.prisma.apiKey.update({
+      where: {
+        apiId_publicId: {
+          apiId,
+          publicId: apiKeyPublicId,
+        },
+      },
+      data: {
+        status: ApiKeyStatus.revoked,
+        revokedAt: new Date(),
+      },
+
+      select: {
+        keyPrefix: true,
+        status: true,
+        updatedAt: true,
+      },
+    });
+
+    await this.redisService.del(key.keyPrefix);
+
+    return {
+      status: key.status,
+      updatedAt: key.updatedAt,
+    };
+  }
+
+  @Cron(CronExpression.EVERY_10_MINUTES)
+  async removeExpiredRotation() {
+    await this.prisma.apiKey.updateMany({
+      where: {
+        status: ApiKeyStatus.rotate,
+        rotateAt: { lt: new Date() },
+      },
+      data: {
+        status: ApiKeyStatus.revoked,
+      },
+    });
+  }
+
+  async rotateApiKey(
+    apiPublicId: string,
+    apiKeyPublicId: string,
+    workspaceId: string,
+    gracePeriod: GracePeriod,
+  ): Promise<RotateApiKeyResponse> {
+    const apiId = await this.getApiId(apiPublicId, workspaceId);
+    const existingKey = await this.prisma.apiKey.findUnique({
+      where: {
+        apiId_publicId: {
+          apiId,
+          publicId: apiKeyPublicId,
+        },
+      },
+      select: {
+        id: true,
+        keyName: true,
+        keyPrefix: true,
+        permission: true,
+        status: true,
+        expiresAt: true,
+        environment: true,
+        policies: {
+          select: {
+            limit: true,
+            window: true,
+            burstLimit: true,
+          },
+        },
+      },
+    });
+
+    if (!existingKey) {
+      throw new NotFoundException('ApiKey not found');
+    }
+
+    if (existingKey.status !== ApiKeyStatus.active) {
+      throw new UnauthorizedException('Apikey is not active');
+    }
+
+    if (existingKey.expiresAt && new Date() > new Date(existingKey.expiresAt)) {
+      throw new UnauthorizedException('Api key has expired');
+    }
+
+    const { prefix, secret } = this.generateApiKeyCredentials();
+
+    const [name, env] = existingKey.keyPrefix.split('_');
+    const namespace = `${name}_${env}`;
+    const newApikey = `${namespace}_${prefix}${secret}`;
+    const hashedKey = this.cryptoService.sign(newApikey);
+
+    const gracePeriodMs = parseDurationToMs(gracePeriod);
+    const revokeAt = new Date(Date.now() + gracePeriodMs);
+
+    const keyPrefix = `${namespace}_${prefix}`;
+    const publicId = generatePublicId('key');
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const result = await tx.apiKey.updateMany({
+          where: {
+            id: existingKey.id,
+            status: ApiKeyStatus.active,
+          },
+          data: {
+            status: ApiKeyStatus.rotate,
+            rotateAt: revokeAt,
+          },
+        });
+        if (result.count === 0) {
+          throw new ConflictException('ApiKey already rotated');
+        }
+
+        await tx.apiKey.create({
+          data: {
+            apiId,
+            publicId,
+            keyName: existingKey.keyName,
+            keyPrefix,
+            hashedKey,
+            permission: existingKey.permission,
+            environment: existingKey.environment,
+            expiresAt: existingKey.expiresAt,
+            policies: {
+              create: {
+                limit: existingKey.policies?.limit,
+                window: existingKey.policies?.window,
+                burstLimit: existingKey.policies?.burstLimit,
+              },
+            },
+          },
+        });
+      });
+
+      await this.redisService.del(existingKey.keyPrefix);
+
+      return {
+        apikey: newApikey,
+        gracePeriod,
+        revokeAt,
+      };
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      if (error instanceof PrismaClientKnownRequestError) {
+        if (error.code === 'P2025') {
+          throw new NotFoundException('Apikey not exist');
+        }
+      }
+      this.logger.error('Unexpected error dudring Apikey rotation', error);
+      throw new InternalServerErrorException('Failed to rotate api key');
     }
   }
 }

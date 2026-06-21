@@ -16,6 +16,7 @@ import { ConfigService } from '@nestjs/config';
 import { OtpModule } from './common/otp/otp.module';
 import { BillingModule } from './module/billing/billing.module';
 import { VerifyModule } from './module/workspace/verify/verify.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { VerifyModule } from './module/workspace/verify/verify.module';
     OtpModule,
     BillingModule,
     VerifyModule,
+    ScheduleModule.forRoot(),
     BullModule.forRootAsync({
       useFactory: (configService: ConfigService) => ({
         connection: {

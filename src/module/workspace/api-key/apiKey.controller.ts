@@ -11,7 +11,12 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApikeyService } from './apiKey.service';
-import { ApiKeyDto, GetApiKeysDto, GetApisDto } from './apikey.dto';
+import {
+  ApiKeyDto,
+  GetApiKeysDto,
+  GetApisDto,
+  RotateApiKeyDto,
+} from './apikey.dto';
 
 import { AppRequest } from '../../../decorators/user.decorator';
 import { WorkspaceOwnerGuard } from '../workspace.guard';
@@ -155,5 +160,42 @@ export class ApikeyController {
       message: 'API key status updated successfully',
       key,
     };
+  }
+
+  @Patch(':apiPublicId/keys/:apiKeyPublicId/revoke')
+  async RevokeApiKey(
+    @Param('apiPublicId') apiPublicId: string,
+    @Param('apiKeyPublicId') apiKeyPublicId: string,
+    @Req() req: AppRequest,
+  ) {
+    const workspaceId = req.workspace.id;
+
+    const key = await this.apikeyService.rovokeApikey(
+      apiPublicId,
+      apiKeyPublicId,
+      workspaceId,
+    );
+
+    return {
+      message: 'API key revoked successfully',
+      key,
+    };
+  }
+  @Post(':apiPublicId/keys/:apiKeyPublicId/rotate')
+  async rotateApiKey(
+    @Param('apiPublicId') apiPublicId: string,
+    @Param('apiKeyPublicId') apiKeyPublicId: string,
+    @Req() req: AppRequest,
+    @Body() dto: RotateApiKeyDto,
+  ) {
+    const workspaceId = req.workspace.id;
+
+    const key = await this.apikeyService.rotateApiKey(
+      apiPublicId,
+      apiKeyPublicId,
+      workspaceId,
+      dto.gracePeriod,
+    );
+    return { key };
   }
 }

@@ -22,6 +22,7 @@ export type ApiKeyCache = {
   hashedKey: string;
   permission: string[];
   expiresAt: Date | null;
+  rotateAt: Date | null;
   status: ApiKeyStatus;
   lastUsedAt: Date | null;
   policy: {
