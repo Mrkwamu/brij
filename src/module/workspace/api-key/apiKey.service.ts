@@ -3,7 +3,7 @@
 import { PrismaService } from '../../../prisma/prisma.service';
 import * as crypto from 'crypto';
 import { CryptoService } from '../../../common/crypto/crypto.service';
-import { ApiKeyDto, GetApiKeysDto, GetApisDto } from './apikey.dto';
+
 import {
   BadRequestException,
   ConflictException,
@@ -26,7 +26,6 @@ import {
   ApiResponse,
   GracePeriod,
   RotateApiKeyResponse,
-  UpdateApiKeyStatusDto,
 } from './type/apikey.type';
 
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/client';
@@ -34,6 +33,13 @@ import { RedisService } from '../../../common/redis/redis.service';
 import { generatePublicId } from '../../../common/utils/helper';
 import { parseDurationToMs } from '../../../common/parse/parse-durarion-to-ms';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import {
+  ApiKeyDto,
+  CreateApiDto,
+  GetApiKeysDto,
+  GetApisDto,
+  UpdateApiKeyStatusDto,
+} from './dto/apikey.dto';
 
 @Injectable()
 export class ApikeyService {
@@ -44,19 +50,26 @@ export class ApikeyService {
     private readonly redisService: RedisService,
   ) {}
 
-  async createApi(workspaceId: string, name: string): Promise<void> {
-    const apiName = name.trim();
+  async createApi(workspaceId: string, dto: CreateApiDto) {
+    const apiName = dto.name.trim();
     if (!apiName) throw new BadRequestException('Provide a name');
     const publicId = generatePublicId('api');
 
     try {
-      await this.prisma.api.create({
+      const result = await this.prisma.api.create({
         data: {
           workspaceId,
           name: apiName,
           publicId,
         },
+        select: {
+          publicId: true,
+          name: true,
+          createdAt: true,
+        },
       });
+
+      return result;
     } catch (error) {
       this.logger.error('Failed to create api container', {
         error,
@@ -73,7 +86,6 @@ export class ApikeyService {
         workspaceId,
       },
       select: {
-        id: true,
         name: true,
         publicId: true,
       },

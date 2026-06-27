@@ -22,8 +22,3 @@ export interface AuthResult {
   refreshToken: string;
   refreshTokenTtlMs: number;
 }
-
-export interface VerifyAccountDto {
-  email: string;
-  otp: number;
-}

@@ -9,18 +9,17 @@ export interface WorkspaceResponse {
   slug: string;
 }
 export interface GetAllWorkspaceResponse {
-  id: string;
   name: string;
   slug: string;
   createdAt: Date;
 }
 
 export interface GetWorkspaceResponse {
-  id: string;
   name: string;
   slug: string;
+  createdAt: Date;
   apis: {
-    id: string;
+    publicId: string;
     name: string;
   }[];
 }

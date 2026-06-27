@@ -14,7 +14,7 @@ import {
   GetWorkspaceResponse,
   WorkspaceResponse,
 } from './type/workspace.type';
-import { WorkSpaceDto } from './type/dto';
+import { WorkSpaceDto } from './dto/workspace.dto';
 
 @Injectable()
 export class WorkspaceService {
@@ -76,7 +76,6 @@ export class WorkspaceService {
           isDeleted: false,
         },
         select: {
-          id: true,
           name: true,
           slug: true,
           createdAt: true,
@@ -97,16 +96,16 @@ export class WorkspaceService {
     }
   }
 
-  async getWorkspace(workspaceId: string): Promise<GetWorkspaceResponse> {
+  async getWorkspace(slug: string): Promise<GetWorkspaceResponse> {
     const workspace = await this.prisma.workspace.findFirst({
-      where: { id: workspaceId, isDeleted: false },
+      where: { slug, isDeleted: false },
       select: {
-        id: true,
         name: true,
         slug: true,
+        createdAt: true,
         apis: {
           select: {
-            id: true,
+            publicId: true,
             name: true,
           },
         },
@@ -150,10 +149,10 @@ export class WorkspaceService {
     }
   }
 
-  async deleteWorkspace(workspaceId: string) {
+  async deleteWorkspace(slug: string) {
     try {
       const deleted = await this.prisma.workspace.updateMany({
-        where: { id: workspaceId, isDeleted: false },
+        where: { slug, isDeleted: false },
         data: {
           isDeleted: true,
           deletedAt: new Date(),

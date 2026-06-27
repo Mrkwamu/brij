@@ -13,6 +13,7 @@ import { BillingService } from '../../billing/billing.service';
 import { RateLimitingService } from '../../rate-limiting/rate-limiting.service';
 import { ApiKeyCache, ParsedApikey, VerifyApiKey } from './verify.type';
 import { ApiKeyStatus } from '../../../../generated/prisma/enums';
+import { VerifyDto } from './dto/verify.dto';
 
 @Injectable()
 export class VerifyService {
@@ -56,7 +57,7 @@ export class VerifyService {
         keyPrefix: lookupKey,
       },
       select: {
-        id: true,
+        publicId: true,
         hashedKey: true,
         permission: true,
         status: true,
@@ -89,7 +90,7 @@ export class VerifyService {
     }
 
     const record: ApiKeyCache = {
-      id: dbRecord.id,
+      publicId: dbRecord.publicId,
       hashedKey: dbRecord.hashedKey,
       permission: dbRecord.permission,
       lastUsedAt: dbRecord.lastUsedAt,
@@ -130,11 +131,9 @@ export class VerifyService {
     });
   }
 
-  async verify(
-    authorization: string,
-    namespace?: string,
-    identifier?: string,
-  ): Promise<VerifyApiKey> {
+  async verify(authorization: string, dto: VerifyDto): Promise<VerifyApiKey> {
+    const namespace = dto.namespace;
+    const identifier = dto.identifier;
     try {
       const { raw, lookupKey } = this.parseAuthHeaders(authorization);
 
@@ -174,7 +173,7 @@ export class VerifyService {
 
       return {
         allowed: rl.allowed,
-        keyId: record.id,
+        publicId: record.publicId,
         permission: record.permission,
         remaining: rl.remaining,
         limit: rl.limit,
@@ -182,7 +181,7 @@ export class VerifyService {
       };
     } catch (err) {
       if (err instanceof HttpException) throw err;
-      console.log(err);
+
       throw new InternalServerErrorException('Failed to verify');
     }
   }

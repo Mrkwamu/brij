@@ -9,8 +9,7 @@ export interface ParsedApikey {
 
 export interface VerifyApiKey {
   allowed: boolean;
-  keyId: string;
-  // ownerId: string;
+  publicId: string;
   permission?: string[];
   remaining?: number;
   limit?: number;
@@ -18,7 +17,7 @@ export interface VerifyApiKey {
 }
 
 export type ApiKeyCache = {
-  id: string;
+  publicId: string;
   hashedKey: string;
   permission: string[];
   expiresAt: Date | null;

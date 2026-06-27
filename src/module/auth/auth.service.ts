@@ -7,7 +7,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { LoginDto, RegisterDto } from './auth.dto';
+
 import { PrismaService } from '../../prisma/prisma.service';
 import { CryptoService } from '../../common/crypto/crypto.service';
 import { JwtService } from '@nestjs/jwt';
@@ -18,13 +18,18 @@ import {
   AuthSession,
   AuthTokenResult,
   AuthResult,
-  VerifyAccountDto,
 } from './types/auth.types';
 import { Prisma } from '../../../generated/prisma/client';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { OtpService } from '../../common/otp/otp.service';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/client';
+import {
+  RegisterDto,
+  LoginDto,
+  VerifyAccountDto,
+  ResendOtpDto,
+} from './dto/auth.dto';
 
 interface CreateOtpRecordDto {
   email: string;
@@ -177,8 +182,6 @@ export class AuthService {
     const { otp, hashedOtp, expiresAt } = await this.otpService.generateOtp();
 
     try {
-      // Wrap user creation, create otp record, and session in a single transaction
-      // so a failure in any step rolls everything back, nothing will be created
       const result = await this.prisma.$transaction(async (tx) => {
         const newUser = await tx.user.create({
           data: {
@@ -198,7 +201,6 @@ export class AuthService {
           tx,
         );
 
-        //generate token ansd store the user session
         const token = await this.createTokensAndSession(
           newUser.id,
           device,
@@ -346,12 +348,12 @@ export class AuthService {
     }
   }
 
-  async resendEmail(email: string) {
-    if (!email) {
+  async resendEmail(dto: ResendOtpDto) {
+    if (!dto.email) {
       throw new BadRequestException('Please provide an email address');
     }
 
-    const userEmail = this.normalizeEmail(email);
+    const userEmail = this.normalizeEmail(dto.email);
 
     const exisitingEmail = await this.prisma.user.findUnique({
       where: {
@@ -397,6 +399,8 @@ export class AuthService {
         });
       });
       await this.sendEmailJob(userEmail, otp);
+
+      return otp;
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;

@@ -1,6 +1,6 @@
 // quota-sync.service.ts
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+// import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
 
@@ -13,7 +13,7 @@ export class QuotaSyncService {
     private readonly redis: RedisService,
   ) {}
 
-  @Cron('*/60 * * * * *')
+  // @Cron('*/60 * * * * *')
   async syncQuotaToDB(): Promise<void> {
     try {
       const keys = await this.redis.keys('quota:*');

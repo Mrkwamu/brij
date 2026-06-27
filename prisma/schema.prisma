@@ -153,7 +153,7 @@ model ApiKey {
   id          String       @id @default(uuid())
   apiId       String       @map("api_id")
   publicId    String       @unique @map("public_id")
-  keyName     String?      @default("untitled key") @map("key_name")
+  keyName     String      @default("untitled key") @map("key_name")
   hashedKey   String       @map("hashed_key")
   keyPrefix   String       @unique @map("key_prefix")
   permission  String[]

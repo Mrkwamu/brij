@@ -1,4 +1,3 @@
-import { IsEnum } from 'class-validator';
 import { ApiKeyStatus } from '../../../../../generated/prisma/enums';
 
 export interface ApiResponse {
@@ -8,7 +7,7 @@ export interface ApiResponse {
 
 export interface ApikeysResponse {
   publicId: string;
-  keyName: string | null;
+  keyName: string;
   keyPrefix: string;
   status: ApiKeyStatus;
   lastUsedAt: Date | null;
@@ -16,8 +15,8 @@ export interface ApikeysResponse {
 }
 
 export interface ApikeyResponse {
-  publicId: string | null;
-  keyName: string | null;
+  publicId: string;
+  keyName: string;
   keyPrefix: string;
   permission: string[];
   environment: string;
@@ -31,11 +30,6 @@ export interface ApikeyResponse {
   } | null;
 }
 
-export class UpdateApiKeyStatusDto {
-  @IsEnum(ApiKeyStatus)
-  status?: ApiKeyStatus;
-}
-
 export interface ApiKeyStatusResponse {
   status: ApiKeyStatus;
   updatedAt: Date;
@@ -43,7 +37,7 @@ export interface ApiKeyStatusResponse {
 
 export interface RotateApiKeyResponse {
   apikey: string;
-  gracePeriod: string;
+  gracePeriod: GracePeriod;
   revokeAt: Date;
 }
 
