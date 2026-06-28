@@ -94,7 +94,6 @@ Run the database migrations:
 
 ```bash
 npx prisma migrate dev
-npx prisma db seed
 ```
 
 Run the database seed:
@@ -162,6 +161,18 @@ curl -X 'POST' \
         "limit": 5,
         "resetAt": 1782665234
     }
+}
+```
+
+### Error Response
+
+Error response do **not** use the `BaseResponse` wrapper
+```json
+{
+    "statusCode": 429,
+    "message": "Rate limit exceeded. Please try again later.",
+    "path": "/api/v1/verify",
+    "timestamp": "2026-06-28T16:57:43.776Z"
 }
 ```
 
