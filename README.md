@@ -145,4 +145,56 @@ curl -X 'POST' \
 }'
 ```
 
+**Response:**
+
+```json
+{
+    "success": true,
+    "message": "API key verified successfully",
+    "data": {
+        "allowed": true,
+        "publicId": "key_Xj6LVoB0gC",
+        "permission": [
+            "read",
+            "write"
+        ],
+        "remaining": 4,
+        "limit": 5,
+        "resetAt": 1782665234
+    }
+}
+```
+
+## Design Decisions
+
+### HMAC-SHA256 instead of bcrypt
+
+API keys are randomly generated with high entropy, so they don't have the same attack model as user passwords. bcrypt is intentionally slow to protect weak, human-created passwords, but that extra cost doesn't provide much value for API keys.
+
+I chose HMAC-SHA256 because it's deterministic, fast, and allows key verification without introducing unnecessary latency on every request.
+
+### Grace-period key rotation
+
+Replacing an API key shouldn't immediately break applications that are still using the old one. When a key is rotated, the new key becomes available immediately while the old key remains valid for a configurable grace period.
+
+Once the grace period expires, a scheduled job automatically revokes the old key. This allows applications to update their configuration without downtime.
+
+### Fail closed on verification errors
+
+If Redis or PostgreSQL is unavailable during key verification, Brij rejects the request instead of allowing it through.
+
+
+## Roadmap
+
+- Usage logging — record every verify call to a `usage_logs` table
+- Quota reset cron — automatically reset `quotaUsed` at each user's `quotaResetsAt`
+- Webhook on quota exceeded — notify workspace owner when a user hits their limit
+- Key expiry notifications — alert before a key's `expiresAt` passes
+
+## License
+
+MIT
+
+
+
 
