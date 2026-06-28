@@ -4,7 +4,7 @@
  
 ## What is Brij? 
 
- Brij is a backend service that handles API access. Instead of building you own key issuance, hashing, validation, rotation and revocation logic, you point your API at Brij's verify endpoint. It tells you whether the incomin key is valid, the permissions it carries and how many requests are left.
+ Brij is a backend service that handles API access. Instead of building you own key issuance, hashing, validation, rotation and revocation logic, you point your API at Brij's verify endpoint. It tells you whether the incoming key is valid, the permissions it carries and how many requests are left.
 
 Keys are never stored in plain text, only an HMAC-SHA256 is stored, so a database breach never exposes the user's secrets. Every verify call checks the key status, expiry, rotation deadline and rate limit in a single request, with Redis caching to keep latency low.
 
@@ -166,7 +166,7 @@ curl -X 'POST' \
 
 ### Error Response
 
-Error response do **not** use the `BaseResponse` wrapper
+Error responses do **not** use the `BaseResponse` wrapper
 ```json
 {
     "statusCode": 429,
