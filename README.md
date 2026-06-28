@@ -41,15 +41,27 @@ Keys are never stored in plain text, only an HMAC-SHA256 is stored, so a databas
 | Documentation | Swagger | 
 | Deployment | Railway |
 
-```mermaid
-flowchart TD
-    A[Your API] -->|POST /verify| B[Brij Verify Endpoint]
-    B --> C[Validate Key Format]
-    C --> D[Redis Lookup]
-    D --> E[Verify HMAC Hash]
-    E --> F[Check Status]
-    F --> G[Check Expiry]
-    G --> H[Check Quota]
-    H --> I[Check Rate Limit]
-    I --> J[Return Verification Result]
+
+ ## Getting Started
+ 
+ ### Prerequisites
+
+- Node.js 18+
+- PostgreSQL
+- Redis
+- A [Resend](https://resend.com) account for email
+
+
+ ### Installation
+
+ Clone the respository and install the project dependencies
+
+ ```bash
+git clone https://github.com/Mrkwamu/brij.git
+cd brij
+npm install
 ```
+
+ 
+
+
