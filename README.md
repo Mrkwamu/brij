@@ -107,7 +107,6 @@ npx prisma db seed
 Start the development server:
 
 ```bash
-# development
 npm run start:dev
 ```
 
@@ -120,7 +119,6 @@ npm run build
 Run the production build:
 
 ```bash
-# production
 npm run start:prod
 ```
 
