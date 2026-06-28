@@ -4,9 +4,9 @@
  
 ## What is Brij? 
 
- Brij is a backend service that handles API access. Instead of building you own key issuance, hashing, validation, rotation and revocation logic, you point your API at Brij's verify endpoint. It tells you whether the incoming key is valid, the permissions it carries and how many requests are left.
+Brij is an API key management service for developers. Instead of building your own key issuance, hashing, validation, rotation, and revocation logic, you integrate with Brij's verification endpoint. It validates incoming API keys, checks permissions, enforces quotas and rate limits, and returns whether the request should be allowed.
 
-Keys are never stored in plain text, only an HMAC-SHA256 is stored, so a database breach never exposes the user's secrets. Every verify call checks the key status, expiry, rotation deadline and rate limit in a single request, with Redis caching to keep latency low.
+Keys are never stored in plain text. Instead, Brij stores an HMAC-SHA256 hash, so a database breach never exposes users' API keys. Every verify call checks the key status, expiry, rotation deadline and rate limit in a single request, with Redis caching to keep latency low.
 
 ## Features
 
@@ -34,7 +34,7 @@ Keys are never stored in plain text, only an HMAC-SHA256 is stored, so a databas
 | Framework | NestJs (Typescript) |
 | Database | PostgreSQL + Prisma |
 | Cache | Redis |
-| Authentication | JWT |
+| Authentication | JWT + HMAC API Keys |
 | Email | Resend |
 | Queue | BullMQ | 
 | Job Scheduling | @nestjs/schedule |
@@ -124,7 +124,7 @@ npm run start:prod
 
 ## API Documentation
 
-Interactive API documentation available at:
+Brij exposes interactive API documentation through Swagger/OpenAPI
 
 - **Live:** `https://brij-production.up.railway.app/docs`
 - **Local:** `http://localhost:5000/docs`
@@ -135,8 +135,7 @@ Interactive API documentation available at:
 ```bash
 curl -X 'POST' \
   'https://brij-production.up.railway.app/api/v1/verify' \
-  -H 'accept: application/json' \
-  -H 'Authorization: Bearer paymentbrij_live_c9f2aaa21bddbea349d1f5809d89d4c5308077308030ce202d70339f4fdf47e64b8675' \
+  -H 'Authorization: Bearer <your-api-key>' \
   -H 'Content-Type: application/json' \
   -d '{
   "namespace": "payment-api",
@@ -197,10 +196,10 @@ If Redis or PostgreSQL is unavailable during key verification, Brij rejects the 
 
 ## Roadmap
 
-- Usage logging — record every verify call to a `usage_logs` table
-- Quota reset cron — automatically reset `quotaUsed` at each user's `quotaResetsAt`
-- Webhook on quota exceeded — notify workspace owner when a user hits their limit
-- Key expiry notifications — alert before a key's `expiresAt` passes
+- [ ] Usage logging
+- [ ] Automatic quota reset
+- [ ] Webhook notifications
+- [ ] API key expiry notifications
 
 ## License
 
