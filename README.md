@@ -27,7 +27,7 @@ Keys are never stored in plain text, only an HMAC-SHA256 is stored, so a databas
   - Refresh token stored in an httpOnly cookie, never exposed to JavaScript
   - Full JWT rotation on every refresh — old refresh token invalidated, new pair issued
 
-  ## Tech Stack
+ ## Tech Stack
 
 | Layer | Technology |
 | ------ | ----------|
@@ -41,4 +41,15 @@ Keys are never stored in plain text, only an HMAC-SHA256 is stored, so a databas
 | Documentation | Swagger | 
 | Deployment | Railway |
 
-
+```mermaid
+flowchart TD
+    A[Your API] -->|POST /verify| B[Brij Verify Endpoint]
+    B --> C[Validate Key Format]
+    C --> D[Redis Lookup]
+    D --> E[Verify HMAC Hash]
+    E --> F[Check Status]
+    F --> G[Check Expiry]
+    G --> H[Check Quota]
+    H --> I[Check Rate Limit]
+    I --> J[Return Verification Result]
+```
