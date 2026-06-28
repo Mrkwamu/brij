@@ -62,6 +62,31 @@ cd brij
 npm install
 ```
 
+### Environment Variables 
+
+create a `.env` file in the project root and the following variables:
+
+```env
+PORT=5000
+NODE_ENV=development
+
+DATABASE_URL=postgresql://user:password@localhost:5432/brij
+
+REDIS_URL=redis://localhost:6379
+
+ACCESS_TOKEN_SECRET=your_access_token_secret
+REFRESH_TOKEN_SECRET=your_refresh_token_secret
+ACCESS_EXPIRY=15m
+REFRESH_EXPIRY=7d
+
+HASH_SECRET_KEY=your_hash_secret
+
+RESEND_KEY=your_resend_api_key
+FROM=noreply@example.com
+
+OTP_EXPIRY=5m
+```
+
  
 
 
