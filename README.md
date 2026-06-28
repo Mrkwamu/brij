@@ -67,6 +67,7 @@ npm install
 create a `.env` file in the project root and the following variables:
 
 ```env
+APP_NAME=Brij
 PORT=5000
 NODE_ENV=development
 
@@ -87,6 +88,63 @@ FROM=noreply@example.com
 OTP_EXPIRY=5m
 ```
 
- 
+### Database Setup
+
+Run the database migrations:
+
+```bash
+npx prisma migrate dev
+npx prisma db seed
+```
+
+Run the database seed:
+```bash
+npx prisma db seed
+```
+
+### Run the Application
+
+Start the development server:
+
+```bash
+# development
+npm run start:dev
+```
+
+Build the application for production:
+
+```bash
+npm run build
+```
+
+Run the production build:
+
+```bash
+# production
+npm run start:prod
+```
+
+
+## API Documentation
+
+Interactive API documentation available at:
+
+- **Live:** `https://brij-production.up.railway.app/docs`
+- **Local:** `http://localhost:5000/docs`
+
+
+### Verify an API Key
+
+```bash
+curl -X 'POST' \
+  'https://brij-production.up.railway.app/api/v1/verify' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer paymentbrij_live_c9f2aaa21bddbea349d1f5809d89d4c5308077308030ce202d70339f4fdf47e64b8675' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "namespace": "payment-api",
+  "identifier": "user_123"
+}'
+```
 
 
