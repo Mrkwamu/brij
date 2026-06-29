@@ -20,7 +20,7 @@ export class EmailService {
     // const from = this.configService.get<string>('FROM');
 
     const { data, error } = await this.getClient().emails.send({
-      from: 'Brij <onboarding@resend.dev>',
+      from: 'Brij <noreply@depatengineering.com>',
       to: email,
       subject: 'Confirm your Brij account',
       html: `
